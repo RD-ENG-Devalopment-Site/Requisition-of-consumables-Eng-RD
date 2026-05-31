@@ -319,21 +319,34 @@ function toggleSidebar() {
 }
 
 function toggleMenuSection(section) {
-  var group = document.querySelector('.menu-group[data-section="' + section + '"]');
-  if (!group) return;
-  var collapsed = group.classList.toggle('collapsed');
-  var state = JSON.parse(localStorage.getItem('menu_collapsed') || '{}');
-  state[section] = collapsed;
-  localStorage.setItem('menu_collapsed', JSON.stringify(state));
+  var group = document.querySelector('.menu-group[data-section="' + section + '"]');
+  if (!group) return;
+  var collapsed = group.classList.toggle('collapsed');
+  var state = JSON.parse(localStorage.getItem('menu_collapsed') || '{}');
+  state[section] = collapsed;
+  localStorage.setItem('menu_collapsed', JSON.stringify(state));
 }
 
 function initMenuSections() {
-  var state = JSON.parse(localStorage.getItem('menu_collapsed') || '{}');
-  document.querySelectorAll('.menu-group').forEach(function(group) {
-    var section = group.getAttribute('data-section');
-    if (state[section]) group.classList.add('collapsed');
-    else group.classList.remove('collapsed');
-  });
+  var state = JSON.parse(localStorage.getItem('menu_collapsed') || '{}');
+  document.querySelectorAll('.menu-group').forEach(function(group) {
+    var section = group.getAttribute('data-section');
+    if (state[section]) group.classList.add('collapsed');
+    else group.classList.remove('collapsed');
+  });
+}
+
+function expandActiveMenuSection(page) {
+  var map = {
+    dashboard: 'main', stock: 'main',
+    items: 'inventory', receive: 'inventory', stocktake: 'inventory', printqr: 'inventory',
+    withdraw: 'withdraw', approve: 'withdraw', transactions: 'withdraw',
+    reports: 'report', users: 'admin', profile: 'main'
+  };
+  var section = map[page];
+  if (!section) return;
+  var group = document.querySelector('.menu-group[data-section="' + section + '"]');
+  if (group) group.classList.remove('collapsed');
 }
 
   var sections = [
