@@ -149,11 +149,9 @@ function setLoginRole(role) {
 function doLogin() {
   var usernameEl = document.getElementById('loginUsername');
   var passwordEl = document.getElementById('loginPassword');
-  var roleEl = document.getElementById('loginRole');
   
   var username = usernameEl ? usernameEl.value.trim() : '';
   var password = passwordEl ? passwordEl.value : '';
-  var role     = roleEl ? roleEl.value : '';
   
   if (!username || !password) { showError('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'); return; }
   var btn = document.getElementById('btnLogin');
@@ -161,11 +159,12 @@ function doLogin() {
     btn.disabled = true; btn.innerHTML = '<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> กำลังเข้าสู่ระบบ...';
   }
   
-  callAPI('login', username, password, role).then(function(res) {
+  // ส่งค่า role เป็นค่าว่าง เพื่อให้ Backend ตรวจสอบสิทธิ์ที่แท้จริงจากฐานข้อมูลเอง
+  callAPI('login', username, password, '').then(function(res) {
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-sign-in"></i> เข้าสู่ระบบ'; }
     if (res.success) {
       AUTH.set(res.token, res.user);
-      initApp();
+      initApp(); // เมื่อรันฟังก์ชันนี้ showMainShell() จะจัดการเปิด/ปิดเมนูตามสิทธิ์ที่ได้มาทันที
     } else { showError(res.message); }
   }).catch(function(err) {
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-sign-in"></i> เข้าสู่ระบบ'; }
