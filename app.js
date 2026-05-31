@@ -1389,32 +1389,61 @@ function buildStocktakePage() {
       else { diffEl.textContent = '' + diff; diffEl.className = 'st-diff text-xs font-medium text-red-600'; }
     });
   });
-}
-
 function submitStocktake() {
-  var inputs = document.querySelectorAll('.st-count');
-  var adjustments = [];
-  inputs.forEach(function(inp) {
-    var row = inp.closest('tr');
-    if (!row) return;
-    var diffEl = row.querySelector('.st-diff');
-    var sys = diffEl ? parseInt(diffEl.getAttribute('data-sys')) || 0 : 0;
-    var act = parseInt(inp.value) || 0;
-    if (act !== sys) adjustments.push({ item_id: inp.getAttribute('data-id'), actual: act, system: sys });
-  });
-  if (adjustments.length === 0) { showError('ไม่มีรายการที่ต้องปรับยอด'); return; }
-  showConfirm('ยืนยันปรับยอด', 'มี ' + adjustments.length + ' รายการที่ต้องปรับยอด ยืนยัน?', function() {
-    showLoading('กำลังปรับยอด...');
-    var promises = adjustments.map(function(a) {
-      return callAPI('updateItem', AUTH.token, a.item_id, { current_stock: a.actual });
-    });
-    Promise.all(promises).then(function() {
-      hideLoading();
-      showSuccess('ปรับยอดเรียบร้อย ' + adjustments.length + ' รายการ');
-      _itemsCacheTime = 0;
-      renderStocktake();
-    }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาดบางรายการ'); });
-  });
+  var inputs = document.querySelectorAll('.st-count');
+  var adjustments = [];
+  
+  inputs.forEach(function(inp) {
+    var row = inp.closest('tr');
+    if (!row) return;
+    var diffEl = row.querySelector('.st-diff');
+    var sys = diffEl ? parseInt(diffEl.getAttribute('data-sys')) || 0 : 0;
+    var act = parseInt(inp.value) || 0;
+    
+    // หากยอดนับจริงไม่ตรงกับระบบ ให้เตรียมข้อมูลปรับยอด
+    if (act !== sys) {
+      var itemId = inp.getAttribute('data-id');
+      // 🟢 ดึงข้อมูลเดิมของวัสดุชิ้นนี้จากอาร์เรย์หลักมาเตรียมไว้
+      var originalItem = _itemsData.find(function(i) { return i.id === itemId; });
+      
+      if (originalItem) {
+        // สร้างก้อน Object ใหม่ที่คัดลอกค่าเดิมมาทั้งหมด แต่เปลี่ยนแค่สต็อกที่นับได้จริง
+        var updatedData = Object.assign({}, originalItem, {
+          current_stock: act,
+          updated_at: new Date().toISOString()
+        });
+        
+        // ถอด ID ออกเพราะระบบใช้ ID แยกเป็น Parameter อยู่แล้วในการอัปเดต
+        delete updatedData.id; 
+        
+        adjustments.push({ 
+          item_id: itemId, 
+          payload: updatedData 
+        });
+      }
+    }
+  });
+  
+  if (adjustments.length === 0) { showError('ไม่มีรายการที่ต้องปรับยอด'); return; }
+  
+  showConfirm('ยืนยันปรับยอด', 'มี ' + adjustments.length + ' รายการที่ต้องปรับยอด ยืนยัน?', function() {
+    showLoading('กำลังปรับยอด...');
+    
+    var promises = adjustments.map(function(a) {
+      // 🟢 ส่ง Payload ข้อมูลชุดเต็มที่มีฟิลด์เดิมครบถ้วนไปอัปเดต ข้อมูลเดิมจึงจะไม่หาย
+      return callAPI('updateItem', AUTH.token, a.item_id, a.payload);
+    });
+    
+    Promise.all(promises).then(function() {
+      hideLoading();
+      showSuccess('ปรับยอดเรียบร้อย ' + adjustments.length + ' รายการ');
+      _itemsCacheTime = 0; // ล้างแคชเพื่อบังคับให้หน้าเว็บโหลดข้อมูลล่าสุดจาก Sheets
+      renderStocktake();
+    }).catch(function() { 
+      hideLoading(); 
+      showError('เกิดข้อผิดพลาดบางรายการ'); 
+    });
+  });
 }
 
 // ===== PRINT QR LABELS =====
