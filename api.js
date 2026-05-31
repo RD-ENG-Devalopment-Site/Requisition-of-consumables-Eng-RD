@@ -23,7 +23,7 @@ function callAPI(fnName) {
   }
   
   // 🟢 แก้ไขตรงนี้: แนบ &_+Date.now() เข้าไปเพื่อบังคับล้างแคช API ดึง JSON ชุดปัจจุบันจาก Sheets เสมอ
-  var url = APPS_SCRIPT_URL + '?fn=' + encodeURIComponent(fnName) + '&args=' + encodeURIComponent(JSON.stringify(args)) + '&=' + Date.now();
+  var url = APPS_SCRIPT_URL + '?fn=' + encodeURIComponent(fnName) + '&args=' + encodeURIComponent(JSON.stringify(args)) + '&_=' + Date.now();
   console.log('[API] GET', url);
 
   return fetch(url, { method: 'GET', mode: 'cors' }).then(function(res) {
