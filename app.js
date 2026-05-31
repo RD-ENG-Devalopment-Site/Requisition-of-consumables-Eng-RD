@@ -2698,12 +2698,10 @@ window.onload = function() {
 callAPI('getConfig').then(function(res) {
     if (res && res.success && res.data) {
       var cfg = res.data;
-      if (cfg.app_name) {
-        var loginApp = document.getElementById('loginAppName');
-        var sideApp = document.getElementById('sidebarAppName');
-        if (loginApp) loginApp.textContent = cfg.app_name;
-        if (sideApp) sideApp.textContent = cfg.app_name;
-      }
+      var loginApp = document.getElementById('loginAppName');
+      var sideApp = document.getElementById('sidebarAppName');
+      if (loginApp && cfg.app_name) loginApp.textContent = cfg.app_name;
+      if (sideApp && cfg.app_name) sideApp.textContent = cfg.app_name;
     }
   }).catch(function(err) {
     console.warn('โหลด config ไม่สำเร็จ:', err);
@@ -2714,5 +2712,5 @@ callAPI('getConfig').then(function(res) {
       hideLoading(); 
       showLoginPage(); 
     }
-  }); // 🟢 บรรทัดนี้ปิด .finally
+  });
 }; // 🟢 บรรทัดนี้ปิด window.onload ตัวใหญ่สุด
