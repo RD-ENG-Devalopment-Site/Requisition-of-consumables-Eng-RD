@@ -2695,18 +2695,24 @@ window.onload = function() {
   _QR_ITEM_ID = urlParams.get('item_id') || '';
 
   // ตรวจสอบเซสชันผู้ใช้และเริ่มต้นแอปตามปกติ (ตัดส่วน Public Asset ออก)
-  callAPI('getConfig').then(function(res) {
-    if (res.success && res.data) {
-      var cfg = res.data;
-      var loginApp = document.getElementById('loginAppName');
-      var sideApp = document.getElementById('sidebarAppName');
-      if (cfg.app_name) {
-        if (loginApp) loginApp.textContent = cfg.app_name;
-        if (sideApp) sideApp.textContent = cfg.app_name;
-      }
-    }
-  }).catch(function() {}).finally(function() {
-    if (AUTH.token) { initApp(); }
-    else { showLoginPage(); }
-  });
-};
+callAPI('getConfig').then(function(res) {
+    if (res && res.success && res.data) {
+      var cfg = res.data;
+      if (cfg.app_name) {
+        var loginApp = document.getElementById('loginAppName');
+        var sideApp = document.getElementById('sidebarAppName');
+        if (loginApp) loginApp.textContent = cfg.app_name;
+        if (sideApp) sideApp.textContent = cfg.app_name;
+      }
+    }
+  }).catch(function(err) {
+    console.warn('โหลด config ไม่สำเร็จ:', err);
+  }).finally(function() {
+    if (AUTH.token) { 
+      initApp(); 
+    } else { 
+      hideLoading(); 
+      showLoginPage(); 
+    }
+  }); // 🟢 บรรทัดนี้ปิด .finally
+}; // 🟢 บรรทัดนี้ปิด window.onload ตัวใหญ่สุด
