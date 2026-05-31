@@ -22,8 +22,8 @@ function callAPI(fnName) {
     });
   }
   
-  // 🟢 แก้ไขตรงนี้: แนบ &_+Date.now() เข้าไปเพื่อบังคับล้างแคช API ดึง JSON ชุดปัจจุบันจาก Sheets เสมอ
-var url = APPS_SCRIPT_URL + '?fn=' + encodeURIComponent(fnName) + '&args=' + encodeURIComponent(JSON.stringify(args)) + '&_=' + Date.now();
+  // แนบเครื่องหมาย &_=[เวลาปัจจุบัน] เพื่อล้างแคช API ดึง JSON ชุดปัจจุบันจาก Sheets เสมอ
+  var url = APPS_SCRIPT_URL + '?fn=' + encodeURIComponent(fnName) + '&args=' + encodeURIComponent(JSON.stringify(args)) + '&_=' + Date.now();
   console.log('[API] GET', url);
 
   return fetch(url, { method: 'GET', mode: 'cors' }).then(function(res) {
@@ -32,6 +32,14 @@ var url = APPS_SCRIPT_URL + '?fn=' + encodeURIComponent(fnName) + '&args=' + enc
     return res.json();
   }).then(function(data) {
     console.log('[API] Data', data);
+    
+    // 🟢 ตัวป้องกันความปลอดภัย: ตรวจสอบและซ่อมแซมโครงสร้างก้อนข้อมูล JSON ก่อนส่งไปให้ app.js ใช้งาน
+    if (data && typeof data === 'object' && data !== null) {
+      if (!data.hasOwnProperty('data')) {
+        return { success: true, data: data };
+      }
+    }
+    
     return data;
   }).catch(function(err) {
     console.warn('[API] Fallback to localStorage mock for', fnName, err);
