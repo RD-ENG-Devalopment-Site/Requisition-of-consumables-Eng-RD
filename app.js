@@ -866,17 +866,21 @@ function handleCSVImport() {
       };
       return callAPI('addItem', AUTH.token, data);
     });
-    Promise.all(promises).then(function(results) {
-      hideLoading(); closeModal();
-      var ok = results.filter(function(r) { return r && r.success; }).length;
-      var fail = results.length - ok;
-      if (fail > 0) showError('นำเข้าสำเร็จ ' + ok + ' รายการ ล้มเหลว ' + fail + ' รายการ');
-      else showSuccess('นำเข้าสำเร็จ ' + ok + ' รายการ');
-      _itemsCacheTime = 0;
-      renderItems();
-    }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
-  });
-}
+ // ... โค้ดด้านบนของซับมิตสต็อกเทค ...
+Promise.all(promises).then(function() {
+      hideLoading();
+      showSuccess('ปรับยอดเรียบร้อย ' + adjustments.length + ' รายการ');
+      _itemsCacheTime = 0; // ล้างแคชเพื่อบังคับให้หน้าเว็บโหลดข้อมูลล่าสุดจาก Sheets
+      renderStocktake();
+    }).catch(function() { 
+      hideLoading(); 
+      showError('เกิดข้อผิดพลาดบางรายการ'); 
+    });
+  }); // 🟢 บรรทัด 576: ปิดคำสั่ง showConfirm
+} // 🟢 บรรทัด 577: ปิดฟังก์ชันใหญ่ submitStocktake() 
+
+// ===== PRINT QR LABELS =====
+var _printQRFilter = { search: '', category: 'all' };
 
 function openAddItemModal() {
   _itemImageFileId = null;
