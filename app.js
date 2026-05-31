@@ -1,1223 +1,2786 @@
 // ============================================================
-// ระบบวัสดุสิ้นเปลือง (Consumable Supplies Management System)
-// Version: 1.0 | Google Apps Script + Google Sheets
+// app.js — Frontend (Static Site - วัสดุสิ้นเปลืองเท่านั้น)
 // ============================================================
 
-const CONFIG = {
-  APP_NAME: 'Requisition of consumables (Eng-RD) System',
-  APP_VERSION: '1.0',
-  SESSION_TIMEOUT: 28800,   // 8 ชั่วโมง (วินาที)
-  ITEMS_PER_PAGE: 20,
-  LOW_STOCK_DEFAULT: 5,
-  SALT: 'SUP_SYS_2569_SALT',
-  ADMIN_USERS: {
-    'admidengrd':   { password: '123456', role: 'admin',    name: 'ผู้ดูแลระบบ',  },
-    'staff':    { password: '123456', role: 'staff',    name: 'เจ้าหน้าที่คลัง', },
-    'employee': { password: '123456', role: 'employee', name: 'พนักงาน 01', }
-  },
-  USER_ROLES: {
-    'admin':    { name: 'ผู้ดูแลระบบ',    permissions: ['all'] },
-    'staff':    { name: 'เจ้าหน้าที่คลัง', permissions: ['view','receive','withdraw','report'] },
-    'employee': { name: 'พนักงาน',        permissions: ['view_own','withdraw'] }
-  }
+// callAPI ถูก define ใน api.js แล้ว
+
+// ===== CONSTANTS =====
+var ITEMS_PER_PAGE = 20;
+var ROLE_LABELS = { admin: 'ผู้ดูแลระบบ', staff: 'เจ้าหน้าที่คลัง', employee: 'พนักงาน' };
+
+// ===== URL PARAMS (for QR / Public) =====
+var _QR_ACTION = '';
+var _QR_ITEM_ID = '';
+
+// ===== AUTH =====
+var AUTH = {
+  token: localStorage.getItem('sup_token') || '',
+  user: JSON.parse(localStorage.getItem('sup_user') || 'null'),
+  set: function(token, user) {
+    AUTH.token = token; AUTH.user = user;
+    localStorage.setItem('sup_token', token);
+    localStorage.setItem('sup_user', JSON.stringify(user));
+  },
+  clear: function() {
+    AUTH.token = ''; AUTH.user = null;
+    localStorage.removeItem('sup_token');
+    localStorage.removeItem('sup_user');
+  },
+  hasRole: function(roles) {
+    if (!AUTH.user) return false;
+    if (!Array.isArray(roles)) roles = [roles];
+    return roles.indexOf(AUTH.user.role) !== -1;
+  }
 };
 
-// ข้อมูลเริ่มต้น 28 รายการวัสดุสิ้นเปลือง (นำเข้าจาก Excel)
-const SEED_ITEMS = [
-  { name:'ถุงมือยาง (ไม่มีแป้ง) สีฟ้า', size:'size S', unit:'กล่อง',  category:'อุปกรณ์ป้องกัน',      stock:9,  min_stock:2 },
-  { name:'ถุงมือยาง (ไม่มีแป้ง) สีฟ้า', size:'size M', unit:'กล่อง',  category:'อุปกรณ์ป้องกัน',      stock:2,  min_stock:2 },
-  { name:'สำลี',                          size:'200 g.', unit:'ม้วน',   category:'วัสดุทำความสะอาด',    stock:48, min_stock:10 },
-  { name:'กระดาษทิชชู่สก็อตเอ็กซ์ตร้า หนา 2 ชั้น', size:'', unit:'ม้วน', category:'วัสดุทำความสะอาด', stock:79, min_stock:20 },
-  { name:'กระดาษทิชชู่เช็ดมือ',          size:'',       unit:'แพ็ค',   category:'วัสดุทำความสะอาด',    stock:36, min_stock:5 },
-  { name:'น้ำยาถูพื้น มิสเตอร์มัสโซ (สีแดง)', size:'5000 mL', unit:'แกลลอน', category:'น้ำยาทำความสะอาด', stock:3, min_stock:2 },
-  { name:'น้ำยาล้างจาน',                  size:'3200 mL', unit:'แกลลอน', category:'น้ำยาทำความสะอาด', stock:2,  min_stock:2 },
-  { name:'ผงซักฟอก',                      size:'17000 g', unit:'ถุง',   category:'น้ำยาทำความสะอาด',   stock:5,  min_stock:2 },
-  { name:'สก็อต ไบร์ท',                   size:'-',      unit:'ชิ้น',   category:'อุปกรณ์ทำความสะอาด', stock:10, min_stock:3 },
-  { name:'ฟลอยด์ ยี่ห้อไดอะมอนด์',        size:'12"×75 ฟุต', unit:'กล่อง', category:'วัสดุบรรจุภัณฑ์', stock:4,  min_stock:2 },
-  { name:'ผ้าถูพื้นกลมสก็อตไบร์ 3M',     size:'41×0.1×24 cm', unit:'ผืน', category:'อุปกรณ์ทำความสะอาด', stock:6, min_stock:2 },
-  { name:'ผ้าไมโครไฟเบอร์',               size:'40×40 cm', unit:'ผืน', category:'อุปกรณ์ทำความสะอาด', stock:15, min_stock:5 },
-  { name:'แปรงล้างขวดนม',                  size:'-',      unit:'อัน',   category:'อุปกรณ์ทำความสะอาด', stock:3,  min_stock:1 },
-  { name:'หมวกคลุมผมตัวหนอน',               size:'100 ชิ้น/แพ็ค', unit:'PAC', category:'อุปกรณ์ป้องกัน', stock:5, min_stock:2 },
-  { name:'น้ำยาเช็ดกระจก',                 size:'-',      unit:'ขวด',   category:'น้ำยาทำความสะอาด',   stock:4,  min_stock:2 },
-  { name:'ตะกร้าเล็ก',                     size:'-',      unit:'อัน',   category:'อุปกรณ์จัดเก็บ',      stock:8,  min_stock:3 },
-  { name:'ตะกร้าใหญ่',                     size:'-',      unit:'อัน',   category:'อุปกรณ์จัดเก็บ',      stock:5,  min_stock:2 },
-  { name:'ถังถูบ้านแบบเหยียบ',             size:'-',      unit:'ถัง',   category:'อุปกรณ์ทำความสะอาด', stock:4,  min_stock:2 },
-  { name:'ที่กวาดหยากไย่พลาสติก',          size:'-',      unit:'อัน',   category:'อุปกรณ์ทำความสะอาด', stock:5,  min_stock:2 },
-  { name:'ไม้ขนไก่เล็ก',                   size:'-',      unit:'อัน',   category:'อุปกรณ์ทำความสะอาด', stock:6,  min_stock:2 },
-  { name:'ไม้กวาด กวาดพื้น',               size:'-',      unit:'อัน',   category:'อุปกรณ์ทำความสะอาด', stock:4,  min_stock:2 },
-  { name:'ปลั๊กสามตา Toshino 4 ช่อง',     size:'5 m',    unit:'อัน',   category:'อุปกรณ์ไฟฟ้า',       stock:3,  min_stock:1 },
-  { name:'ถุงซิปใส 9×13 cm',               size:'KG',     unit:'KG',    category:'วัสดุบรรจุภัณฑ์',    stock:5,  min_stock:2 },
-  { name:'ถุงซิปใส 15×23 cm',              size:'KG',     unit:'KG',    category:'วัสดุบรรจุภัณฑ์',    stock:4,  min_stock:2 },
-  { name:'ถุงซิปใส 23×35 cm',              size:'KG',     unit:'KG',    category:'วัสดุบรรจุภัณฑ์',    stock:3,  min_stock:1 },
-  { name:'ถุงร้อน 10×15 นิ้ว',             size:'2 KG',   unit:'PAC',   category:'วัสดุบรรจุภัณฑ์',    stock:8,  min_stock:3 },
-  { name:'สบู่เหลวล้างมือ',                size:'3.8 ลิตร', unit:'อัน', category:'น้ำยาทำความสะอาด',   stock:4,  min_stock:2 },
-  { name:'ไส้กรอง PP 10 นิ้ว 1 ไมครอน',   size:'-',      unit:'อัน',   category:'อุปกรณ์อื่นๆ',       stock:5,  min_stock:2 }
-];
-
-// ============================================================
-// ENTRY POINT
-// ============================================================
-
-/**
- * doGet — จุดเข้าหลักของ Web App
- * รองรับ ?action=withdraw&item_id=UUID สำหรับ QR Scan
- */
-function doGet(e) {
-  try {
-    initializeSheets();
-    var params = e ? e.parameter : {};
-
-    // API mode: ถ้ามี ?fn=xxx ให้ return JSON แทน HTML (สำหรับ static frontend)
-    if (params.fn) {
-      var fn = params.fn;
-      var args = [];
-      try { args = JSON.parse(params.args || '[]'); } catch(err) { args = []; }
-      var result;
-      switch (fn) {
-        case 'login':               result = login(args[0], args[1], args[2]); break;
-        case 'validateSession':     result = validateSession(args[0]); break;
-        case 'logout':              result = logout(args[0]); break;
-        case 'forgotPassword':      result = forgotPassword(args[0]); break;
-        case 'getItems':            result = getItems(args[0]); break;
-        case 'getItemById':         result = getItemById(args[0], args[1]); break;
-        case 'addItem':             result = addItem(args[0], args[1]); break;
-        case 'updateItem':          result = updateItem(args[0], args[1], args[2]); break;
-        case 'deleteItem':          result = deleteItem(args[0], args[1]); break;
-        case 'addReceive':          result = addReceive(args[0], args[1]); break;
-        case 'getReceives':         result = getReceives(args[0], args[1]); break;
-        case 'addWithdrawal':       result = addWithdrawal(args[0], args[1]); break;
-        case 'getWithdrawals':      result = getWithdrawals(args[0], args[1]); break;
-        case 'approveWithdrawal':   result = approveWithdrawal(args[0], args[1], args[2]); break;
-        case 'rejectWithdrawal':    result = rejectWithdrawal(args[0], args[1], args[2]); break;
-        case 'cancelWithdrawal':    result = cancelWithdrawal(args[0], args[1]); break;
-        case 'getTransactions':     result = getTransactions(args[0], args[1]); break;
-        case 'getDashboardStats':   result = getDashboardStats(args[0]); break;
-        case 'getUsers':            result = getUsers(args[0]); break;
-        case 'addUser':             result = addUser(args[0], args[1]); break;
-        case 'updateUser':          result = updateUser(args[0], args[1], args[2]); break;
-        case 'changePassword':      result = changePassword(args[0], args[1], args[2]); break;
-        case 'resetUserPassword':   result = resetUserPassword(args[0], args[1]); break;
-        case 'toggleUserActive':    result = toggleUserActive(args[0], args[1]); break;
-        case 'saveConfig':          result = saveConfig(args[0], args[1]); break;
-        case 'getConfig':           result = { success: true, data: getConfig() }; break;
-        case 'getMonthlyReport':    result = getMonthlyReport(args[0], args[1], args[2]); break;
-        case 'generateExportUrl':    result = generateExportUrl(args[0], args[1], args[2]); break;
-        case 'uploadFile':          result = uploadFile(args[0], args[1], args[2], args[3]); break;
-        case 'testTelegram':        result = testTelegram(args[0]); break;
-        default:
-          result = { success: false, message: 'Unknown function: ' + fn };
-      }
-      return jsonResponse(result);
-    }
-
-    var template = HtmlService.createTemplateFromFile('index');
-    var cfg = getConfig();
-    template.appName = cfg.app_name || CONFIG.APP_NAME;
-    template.appLogo = cfg.app_logo || '';
-    template.qrAction = params.action || '';
-    template.qrItemId = params.item_id || '';
-    return template.evaluate()
-      .setTitle(template.appName)
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  } catch (err) {
-    logError('doGet', err);
-    return HtmlService.createHtmlOutput('<h2 style="font-family:sans-serif;padding:2rem">เกิดข้อผิดพลาด กรุณาติดต่อผู้ดูแลระบบ</h2>');
-  }
+// ===== LOADING =====
+function showLoading(text) {
+  var el = document.getElementById('loadingText');
+  var overlay = document.getElementById('loadingOverlay');
+  if (el) el.textContent = text || 'กำลังโหลด...';
+  if (overlay) overlay.classList.remove('hidden');
+}
+function hideLoading() {
+  var overlay = document.getElementById('loadingOverlay');
+  if (overlay) overlay.classList.add('hidden');
 }
 
-/** include — ดึงเนื้อหาไฟล์ HTML */
-function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+// ===== ALERTS =====
+function showSuccess(msg) { Swal.fire({ icon: 'success', title: 'สำเร็จ', text: msg, timer: 2000, showConfirmButton: false, customClass: { popup: 'swal2-popup' } }); }
+function showError(msg)   { Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: msg, customClass: { popup: 'swal2-popup' } }); }
+function showConfirm(title, text, cb, confirmText) {
+  Swal.fire({
+    title: title, text: text, icon: 'warning', showCancelButton: true,
+    confirmButtonText: confirmText || 'ยืนยัน', cancelButtonText: 'ยกเลิก',
+    reverseButtons: true, customClass: { popup: 'swal2-popup' }
+  }).then(function(r) { if (r.isConfirmed) cb(); });
 }
 
-/**
- * doOptions — CORS preflight
- */
-function doOptions(e) {
-  var output = ContentService.createTextOutput('');
-  output.setMimeType(ContentService.MimeType.TEXT);
-  return output;
+// ===== MODAL =====
+function openModal(title, bodyHtml, footerHtml) {
+  var titleEl = document.getElementById('modalTitle');
+  var bodyEl = document.getElementById('modalBody');
+  var footerEl = document.getElementById('modalFooter');
+  var overlay = document.getElementById('modalOverlay');
+  
+  if (titleEl) titleEl.textContent = title;
+  if (bodyEl) bodyEl.innerHTML = bodyHtml;
+  if (footerEl) footerEl.innerHTML = footerHtml || '';
+  if (overlay) overlay.classList.remove('hidden');
+}
+function closeModal() {
+  var overlay = document.getElementById('modalOverlay');
+  var bodyEl = document.getElementById('modalBody');
+  var footerEl = document.getElementById('modalFooter');
+  
+  if (overlay) overlay.classList.add('hidden');
+  if (bodyEl) bodyEl.innerHTML = '';
+  if (footerEl) footerEl.innerHTML = '';
 }
 
-function doPost(e) {
-  try {
-    initializeSheets();
-    var fn, args = [];
-    if (e.postData && e.postData.type === 'application/json') {
-      var payload = JSON.parse(e.postData.contents);
-      fn = payload.fn;
-      args = payload.args || [];
-    } else {
-      fn = e.parameter.fn;
-      try { args = JSON.parse(e.parameter.args || '[]'); } catch(err) { args = []; }
-    }
-    var result;
-    switch (fn) {
-      case 'uploadFile': result = uploadFile(args[0], args[1], args[2], args[3]); break;
-      default: result = { success: false, message: 'Use GET for ' + fn };
-    }
-    return jsonResponse(result);
-  } catch(err) {
-    logError('doPost', err);
-    return jsonResponse({ success: false, message: err.message || String(err) });
-  }
+// ===== UTILITIES =====
+function formatDate(iso) {
+  if (!iso) return '-';
+  var d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+function formatDateTime(iso) {
+  if (!iso) return '-';
+  var d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+function escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function togglePass(inputId, btn) {
+  var inp = document.getElementById(inputId);
+  if (!inp) return;
+  var isPass = inp.type === 'password';
+  inp.type = isPass ? 'text' : 'password';
+  var icon = btn.querySelector('i');
+  if (icon) {
+    icon.className = isPass ? 'fi fi-rr-eye-crossed text-sm' : 'fi fi-rr-eye text-sm';
+  }
+}
+function getStockClass(stock, min) {
+  if (stock <= 0) return 'stock-critical';
+  if (stock <= min) return 'stock-low';
+  return 'stock-ok';
+}
+function getStockLabel(stock, min) {
+  if (stock <= 0) return 'หมด';
+  if (stock <= min) return 'ใกล้หมด';
+  return 'ปกติ';
+}
+function imgUrl(fileId, size) {
+  if (!fileId) return '';
+  return getFileDataUrl(fileId) || '';
 }
 
-function jsonResponse(data) {
-  var output = ContentService.createTextOutput(JSON.stringify(data));
-  output.setMimeType(ContentService.MimeType.JSON);
-  return output;
+// ===== PAGINATION =====
+function renderPagination(containerId, total, currentPage, onPageClick) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+  
+  var totalPages = Math.ceil(total / ITEMS_PER_PAGE);
+  if (totalPages <= 1) { container.innerHTML = ''; return; }
+  var html = '<div class="flex items-center justify-between mt-4">';
+  html += '<p class="text-xs text-gray-500">ทั้งหมด ' + total + ' รายการ</p>';
+  html += '<div class="flex gap-1">';
+  if (currentPage > 1) html += '<button class="page-btn" onclick="(' + onPageClick + ')(' + (currentPage - 1) + ')"><i class="fi fi-rr-angle-left"></i></button>';
+  var start = Math.max(1, currentPage - 2), end = Math.min(totalPages, currentPage + 2);
+  for (var p = start; p <= end; p++) {
+    html += '<button class="page-btn ' + (p === currentPage ? 'active' : '') + '" onclick="(' + onPageClick + ')(' + p + ')">' + p + '</button>';
+  }
+  if (currentPage < totalPages) html += '<button class="page-btn" onclick="(' + onPageClick + ')(' + (currentPage + 1) + ')"><i class="fi fi-rr-angle-right"></i></button>';
+  html += '</div></div>';
+  container.innerHTML = html;
 }
 
-// ============================================================
-// INITIALIZE SHEETS
-// ============================================================
-
-/**
- * initializeSheets — สร้าง/ตรวจสอบ Sheets ทั้งหมดเฉพาะฝั่งวัสดุสิ้นเปลือง
- */
-function initializeSheets() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheetNames = ss.getSheets().map(function(s){ return s.getName(); });
-
-  var required = {
-    'Config':       'config_json',
-    'Users':        'user_json',
-    'Sessions':     'session_json',
-    'Items':        'item_json',
-    'Receives':     'receive_json',
-    'Withdrawals':  'withdrawal_json',
-    'Transactions': 'transaction_json',
-    'Errors':       'error_json'
-  };
-
-  Object.keys(required).forEach(function(name) {
-    if (sheetNames.indexOf(name) === -1) {
-      var sheet = ss.insertSheet(name);
-      sheet.appendRow([required[name]]);
-    }
-  });
-
-  // Seed Config ถ้ายังว่าง
-  if (getSheetData('Config').length === 0) {
-    saveToSheet('Config', {
-      app_name: CONFIG.APP_NAME,
-      app_logo: '',
-      organization_name: 'โรงเรียนอนุบาลทราย',
-      organization_address: '',
-      organization_phone: '',
-      organization_email: '',
-      telegram_bot_token: '',
-      telegram_chat_id: '',
-      telegram_enabled: false,
-      low_stock_threshold: CONFIG.LOW_STOCK_DEFAULT,
-      app_version: CONFIG.APP_VERSION
-    });
-  }
-
-  // Seed Users ถ้ายังว่าง
-  if (getSheetData('Users').length === 0) {
-    Object.keys(CONFIG.ADMIN_USERS).forEach(function(username) {
-      var u = CONFIG.ADMIN_USERS[username];
-      saveToSheet('Users', {
-        id: Utilities.getUuid(),
-        username: username,
-        password: hashPassword(u.password),
-        role: u.role,
-        name: u.name,
-        email: u.email || '',
-        phone: '',
-        avatar: '',
-        telegram_chat_id: '',
-        active: true,
-        last_login: ''
-      });
-    });
-  }
-
-  // Seed Items ถ้ายังว่าง
-  if (getSheetData('Items').length === 0) {
-    SEED_ITEMS.forEach(function(item, idx) {
-      var code = 'SUP-' + String(idx + 1).padStart(3, '0');
-      saveToSheet('Items', {
-        id: Utilities.getUuid(),
-        item_code: code,
-        name: item.name,
-        size: item.size,
-        unit: item.unit,
-        category: item.category,
-        current_stock: item.stock,
-        min_stock: item.min_stock,
-        description: '',
-        image_file_id: '',
-        active: true
-      });
-    });
-  }
-
-  return { status: 'success', message: 'Sheets พร้อมใช้งาน' };
+// ===== LOGIN =====
+function setLoginRole(role) {
+  var roleInput = document.getElementById('loginRole');
+  if (roleInput) roleInput.value = role;
+  
+  ['admin', 'staff', 'employee'].forEach(function(r) {
+    var tab = document.getElementById('tab' + r.charAt(0).toUpperCase() + r.slice(1));
+    if (!tab) return;
+    if (r === role) { tab.className = 'role-tab active-tab flex-1 py-3.5 text-sm font-semibold text-center transition-all border-b-2'; }
+    else            { tab.className = 'role-tab flex-1 py-3.5 text-sm font-semibold text-center transition-all border-b-2 border-transparent text-gray-400 hover:text-gray-600'; }
+  });
 }
 
-// ============================================================
-// AUTHENTICATION
-// ============================================================
-
-/** login — เข้าสู่ระบบด้วย username + password */
-function login(username, password, role) {
-  try {
-    var users = getSheetData('Users');
-    var user = null;
-    for (var i = 0; i < users.length; i++) {
-      if (users[i].username === username && users[i].active) { user = users[i]; break; }
-    }
-    if (!user) return { success: false, message: 'ไม่พบชื่อผู้ใช้งานในระบบ' };
-    if (!verifyPassword(password, user.password)) return { success: false, message: 'รหัสผ่านไม่ถูกต้อง' };
-    if (role && user.role !== role) return { success: false, message: 'บทบาทไม่ถูกต้อง กรุณาเลือกแท็บให้ตรง' };
-
-    var token = Utilities.getUuid();
-    var now = new Date();
-    saveToSheet('Sessions', {
-      id: Utilities.getUuid(),
-      token: token,
-      user_id: user.id,
-      username: user.username,
-      role: user.role,
-      name: user.name,
-      expires_at: new Date(now.getTime() + CONFIG.SESSION_TIMEOUT * 1000).toISOString()
-    });
-    updateInSheet('Users', user.id, { last_login: now.toISOString() });
-
-    return {
-      success: true,
-      token: token,
-      user: { id: user.id, username: user.username, role: user.role, name: user.name, avatar: user.avatar || '' }
-    };
-  } catch(err) {
-    logError('login', err);
-    return { success: false, message: 'เกิดข้อผิดพลาดในระบบ' };
-  }
+function doLogin() {
+  var usernameEl = document.getElementById('loginUsername');
+  var passwordEl = document.getElementById('loginPassword');
+  var roleEl = document.getElementById('loginRole');
+  
+  var username = usernameEl ? usernameEl.value.trim() : '';
+  var password = passwordEl ? passwordEl.value : '';
+  var role     = roleEl ? roleEl.value : '';
+  
+  if (!username || !password) { showError('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'); return; }
+  var btn = document.getElementById('btnLogin');
+  if (btn) {
+    btn.disabled = true; btn.innerHTML = '<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> กำลังเข้าสู่ระบบ...';
+  }
+  
+  callAPI('login', username, password, role).then(function(res) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-sign-in"></i> เข้าสู่ระบบ'; }
+    if (res.success) {
+      AUTH.set(res.token, res.user);
+      initApp();
+    } else { showError(res.message); }
+  }).catch(function(err) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-sign-in"></i> เข้าสู่ระบบ'; }
+    showError('ไม่สามารถเชื่อมต่อระบบได้');
+  });
 }
 
-/** validateSession — ตรวจสอบ token ที่ส่งมา */
-function validateSession(token) {
-  try {
-    if (!token) return null;
-    var sessions = getSheetData('Sessions');
-    for (var i = 0; i < sessions.length; i++) {
-      var s = sessions[i];
-      if (s.token === token) {
-        if (new Date(s.expires_at) < new Date()) {
-          deleteFromSheet('Sessions', s.id, true);
-          return null;
-        }
-        return s;
-      }
-    }
-    return null;
-  } catch(err) { return null; }
+function doLogout() {
+  showConfirm('ออกจากระบบ', 'ต้องการออกจากระบบใช่หรือไม่?', function() {
+    showLoading('กำลังออกจากระบบ...');
+    callAPI('logout', AUTH.token).then(function() {
+      AUTH.clear(); location.reload();
+    });
+  }, 'ออกจากระบบ');
 }
 
-/** logout — ยกเลิก session */
-function logout(token) {
-  try {
-    var sessions = getSheetData('Sessions');
-    for (var i = 0; i < sessions.length; i++) {
-      if (sessions[i].token === token) { deleteFromSheet('Sessions', sessions[i].id, true); break; }
-    }
-    return { success: true };
-  } catch(err) { return { success: false }; }
+function showForgotModal()  { var el = document.getElementById('forgotModal'); if (el) el.classList.remove('hidden'); }
+function closeForgotModal() { var el = document.getElementById('forgotModal'); if (el) el.classList.add('hidden'); }
+function submitForgotPassword() {
+  var emailEl = document.getElementById('forgotEmail');
+  var email = emailEl ? emailEl.value.trim() : '';
+  if (!email) { showError('กรุณากรอกอีเมล'); return; }
+  showLoading('กำลังส่งรหัสผ่านชั่วคราว...');
+  callAPI('forgotPassword', email).then(function(res) {
+    hideLoading(); closeForgotModal();
+    if (res.success) showSuccess(res.message);
+    else showError(res.message);
+  }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
 }
 
-/** forgotPassword — ส่งรหัสผ่านชั่วคราวทางอีเมล */
-function forgotPassword(email) {
-  try {
-    var users = getSheetData('Users');
-    var user = null;
-    for (var i = 0; i < users.length; i++) {
-      if (users[i].email === email && users[i].active) { user = users[i]; break; }
-    }
-    if (!user) return { success: false, message: 'ไม่พบอีเมลนี้ในระบบ' };
-    var tmpPass = Math.random().toString(36).slice(-8).toUpperCase();
-    updateInSheet('Users', user.id, { password: hashPassword(tmpPass) });
-    var cfg = getConfig();
-    MailApp.sendEmail({
-      to: email,
-      subject: 'รีเซ็ตรหัสผ่าน — ' + cfg.app_name,
-      htmlBody: '<div style="font-family:sans-serif"><h2>รีเซ็ตรหัสผ่าน</h2>'
-        + '<p>สวัสดี คุณ' + user.name + '</p>'
-        + '<p>รหัสผ่านชั่วคราว: <strong style="font-size:1.2em;color:#1e3a8a">' + tmpPass + '</strong></p>'
-        + '<p>กรุณาเปลี่ยนรหัสผ่านหลังจาก Login</p></div>'
-    });
-    return { success: true, message: 'ส่งรหัสผ่านชั่วคราวไปที่อีเมลเรียบร้อย' };
-  } catch(err) {
-    logError('forgotPassword', err);
-    return { success: false, message: 'ส่งอีเมลไม่สำเร็จ กรุณาลองใหม่' };
-  }
+// ===== APP INIT =====
+function initApp() {
+  showLoading('กำลังตรวจสอบสิทธิ์...');
+  callAPI('validateSession', AUTH.token).then(function(session) {
+    hideLoading();
+    if (!session) { AUTH.clear(); showLoginPage(); return; }
+    AUTH.user = { id: session.user_id, username: session.username, role: session.role, name: session.name };
+    localStorage.setItem('sup_user', JSON.stringify(AUTH.user));
+    showMainShell();
+    loadPage('dashboard');
+    
+    // QR action จาก URL ของวัสดุสิ้นเปลือง
+    if (_QR_ACTION === 'withdraw' && _QR_ITEM_ID) {
+      setTimeout(function() { openWithdrawFromQR(_QR_ITEM_ID); }, 800);
+    }
+  }).catch(function() { hideLoading(); showLoginPage(); });
 }
 
-// ============================================================
-// ITEMS (รายการวัสดุ)
-// ============================================================
-
-/** getItems — ดึงรายการวัสดุทั้งหมด */
-function getItems(token) {
-  try {
-    if (!validateSession(token)) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-    var items = getSheetData('Items').filter(function(i){ return i.active !== false; });
-    items.sort(function(a,b){ return (a.item_code||'').localeCompare(b.item_code||''); });
-    return { success: true, data: items };
-  } catch(err) {
-    logError('getItems', err);
-    return { success: false, message: err.message };
-  }
+function showLoginPage() {
+  var lp = document.getElementById('loginPage');
+  var ms = document.getElementById('mainShell');
+  if (lp) lp.classList.remove('hidden');
+  if (ms) ms.classList.add('hidden');
 }
 
-/** getItemById — ดึงวัสดุตาม ID (สำหรับ QR scan) */
-function getItemById(token, itemId) {
-  try {
-    if (!validateSession(token)) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-    var items = getSheetData('Items');
-    for (var i = 0; i < items.length; i++) {
-      if (items[i].id === itemId) return { success: true, data: items[i] };
-    }
-    return { success: false, message: 'ไม่พบรายการวัสดุ' };
-  } catch(err) { return { success: false, message: err.message }; }
+function _setElementDisplay(id, displayStyle) {
+  var el = document.getElementById(id);
+  if (el) el.style.display = displayStyle;
 }
 
-/** addItem — เพิ่มรายการวัสดุใหม่ (Admin) */
-function addItem(token, itemData) {
-  try {
-    var session = validateSession(token);
-    if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์ดำเนินการ' };
-    var items = getSheetData('Items');
-    var code = 'SUP-' + String(items.length + 1).padStart(3, '0');
-    var newItem = {
-      id: Utilities.getUuid(),
-      item_code: code,
-      name: itemData.name,
-      size: itemData.size || '',
-      unit: itemData.unit,
-      category: itemData.category || 'อื่นๆ',
-      current_stock: parseInt(itemData.current_stock) || 0,
-      min_stock: parseInt(itemData.min_stock) || 5,
-      description: itemData.description || '',
-      image_file_id: itemData.image_file_id || '',
-      active: true
-    };
-    saveToSheet('Items', newItem);
-    return { success: true, data: newItem, message: 'เพิ่มรายการวัสดุเรียบร้อย' };
-  } catch(err) {
-    logError('addItem', err);
-    return { success: false, message: err.message };
-  }
+function showMainShell() {
+  var lp = document.getElementById('loginPage');
+  var ms = document.getElementById('mainShell');
+  var sbName = document.getElementById('sidebarName');
+  var sbRole = document.getElementById('sidebarRole');
+  
+  if (lp) lp.classList.add('hidden');
+  if (ms) ms.classList.remove('hidden');
+  if (sbName) sbName.textContent = AUTH.user.name || AUTH.user.username;
+  if (sbRole) sbRole.textContent = ROLE_LABELS[AUTH.user.role] || AUTH.user.role;
+  
+  var isAdmin = AUTH.user.role === 'admin';
+  var notEmp  = AUTH.user.role !== 'employee';
+  
+  // จัดการการแสดงผลเมนู ฝั่งวัสดุสิ้นเปลืองและผู้ใช้เท่านั้น (ถอด Asset ทั้งหมด)
+  _setElementDisplay('menuItems', isAdmin ? '' : 'none');
+  _setElementDisplay('menuReceive', notEmp ? '' : 'none');
+  _setElementDisplay('menuStocktake', notEmp ? '' : 'none');
+  _setElementDisplay('menuPrintQR', notEmp ? '' : 'none');
+  _setElementDisplay('menuInventorySection', notEmp ? '' : 'none');
+  _setElementDisplay('menuApprove', isAdmin ? '' : 'none');
+  _setElementDisplay('menuAdminSection', isAdmin ? '' : 'none');
+  _setElementDisplay('menuReportLabel', notEmp ? '' : 'none');
+  _setElementDisplay('menuReportSection', notEmp ? '' : 'none');
+  
+  initMenuSections();
+  updateClock();
+  setInterval(updateClock, 60000);
 }
 
-/** updateItem — แก้ไขรายการวัสดุ (Admin) */
-function updateItem(token, itemId, itemData) {
-  try {
-    var session = validateSession(token);
-    if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์ดำเนินการ' };
-    var updated = updateInSheet('Items', itemId, {
-      name: itemData.name,
-      size: itemData.size,
-      unit: itemData.unit,
-      category: itemData.category,
-      min_stock: parseInt(itemData.min_stock),
-      description: itemData.description,
-      image_file_id: itemData.image_file_id || ''
-    });
-    if (!updated) return { success: false, message: 'ไม่พบรายการ' };
-    return { success: true, message: 'แก้ไขเรียบร้อย' };
-  } catch(err) {
-    logError('updateItem', err);
-    return { success: false, message: err.message };
-  }
+function updateClock() {
+  var el = document.getElementById('topDateTime');
+  if (el) el.textContent = new Date().toLocaleString('th-TH', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-/** deleteItem — ปิดใช้งานรายการวัสดุ (soft delete) */
-function deleteItem(token, itemId) {
-  try {
-    var session = validateSession(token);
-    if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์ดำเนินการ' };
-    updateInSheet('Items', itemId, { active: false });
-    return { success: true, message: 'ลบรายการเรียบร้อย' };
-  } catch(err) { return { success: false, message: err.message }; }
+// ===== NAVIGATION =====
+var _currentPage = '';
+
+function loadPage(page) {
+  _currentPage = page;
+  document.querySelectorAll('.menu-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-page') === page);
+  });
+  expandActiveMenuSection(page);
+  
+  var titles = {
+    dashboard: 'ภาพรายงานระบบ', stock: 'สต็อกคงเหลือ', items: 'รายการวัสดุ',
+    receive: 'รับวัสดุเข้าคลัง', stocktake: 'นับสต็อก', printqr: 'พิมพ์ QR สติ๊กเกอร์', withdraw: 'เบิกวัสดุ', approve: 'อนุมัติการเบิก',
+    transactions: 'ประวัติเคลื่อนไหว', reports: 'รายงาน',
+    users: 'จัดการผู้ใช้งาน', profile: 'โปรไฟล์', manual: 'คู่มือการใช้งาน'
+  };
+  
+  var pageTitleEl = document.getElementById('pageTitle');
+  if (pageTitleEl) pageTitleEl.textContent = titles[page] || page;
+  
+  // ตัดโครงสร้าง Breadcrumbs คอนฟิกออก ป้องกันปัญหาการพยายามเข้าถึง Element ที่ไม่มีอยู่จริง
+  
+  var sidebar = document.getElementById('sidebar');
+  var sidebarOverlay = document.getElementById('sidebarOverlay');
+  if (sidebar) sidebar.classList.remove('open');
+  if (sidebarOverlay) sidebarOverlay.classList.add('hidden');
+  
+  var content = document.getElementById('mainContent');
+  if (content) {
+    content.innerHTML = '<div class="flex items-center justify-center py-16"><div class="w-8 h-8 border-4 border-navy-600 border-t-transparent rounded-full animate-spin"></div></div>';
+  }
+  
+  if (page === 'dashboard')      renderDashboard();
+  else if (page === 'stock')     renderStock();
+  else if (page === 'items')     renderItems();
+  else if (page === 'receive')   renderReceive();
+  else if (page === 'stocktake') renderStocktake();
+  else if (page === 'printqr')   renderPrintQRLabels();
+  else if (page === 'withdraw')  renderWithdraw();
+  else if (page === 'approve')   renderApprove();
+  else if (page === 'transactions') renderTransactions();
+  else if (page === 'reports')   renderReports();
+  else if (page === 'users')     renderUsers();
+  else if (page === 'profile')   renderProfile();
+  else if (page === 'manual')    renderManual();
 }
 
-// ============================================================
-// RECEIVES (รับวัสดุเข้าคลัง)
-// ============================================================
-
-/** addReceive — บันทึกการรับวัสดุเข้า (Admin + Staff) */
-function addReceive(token, receiveData) {
-  try {
-    var session = validateSession(token);
-    if (!session || session.role === 'employee') return { success: false, message: 'ไม่มีสิทธิ์ดำเนินการ' };
-    var lock = LockService.getScriptLock();
-    lock.tryLock(10000);
-    try {
-      var items = getSheetData('Items');
-      var item = null;
-      for (var i = 0; i < items.length; i++) {
-        if (items[i].id === receiveData.item_id) { item = items[i]; break; }
-      }
-      if (!item) return { success: false, message: 'ไม่พบรายการวัสดุ' };
-
-      var qty = parseInt(receiveData.quantity);
-      if (!qty || qty <= 0) return { success: false, message: 'จำนวนไม่ถูกต้อง' };
-
-      var stockBefore = item.current_stock || 0;
-      var stockAfter = stockBefore + qty;
-
-      updateInSheet('Items', item.id, { current_stock: stockAfter });
-      var recNo = generateRunningNumber('RCV', 'Receives');
-
-      var rec = {
-        id: Utilities.getUuid(),
-        receive_no: recNo,
-        item_id: item.id,
-        item_name: item.name,
-        item_code: item.item_code,
-        quantity: qty,
-        unit: item.unit,
-        received_by: session.user_id,
-        received_by_name: session.name,
-        note: receiveData.note || '',
-        date: receiveData.date || new Date().toISOString().split('T')[0]
-      };
-      saveToSheet('Receives', rec);
-
-      saveToSheet('Transactions', {
-        id: Utilities.getUuid(),
-        type: 'receive',
-        item_id: item.id,
-        item_name: item.name,
-        item_code: item.item_code,
-        quantity: qty,
-        stock_before: stockBefore,
-        stock_after: stockAfter,
-        ref_id: recNo,
-        actor_id: session.user_id,
-        actor_name: session.name,
-        actor_role: session.role,
-        note: receiveData.note || '',
-        date: rec.date
-      });
-
-      var msg = '<b>รับวัสดุเข้าคลัง</b> #' + recNo
-        + '\nรายการ: ' + item.name + ' (' + item.size + ')'
-        + '\nจำนวน: +' + qty + ' ' + item.unit
-        + '\nสต็อกคงเหลือ: ' + stockAfter + ' ' + item.unit
-        + '\nโดย: ' + session.name
-        + '\nวันที่: ' + rec.date;
-      sendTelegram(msg);
-
-      return { success: true, message: 'บันทึกรับเข้าเรียบร้อย', receive_no: recNo };
-    } finally { lock.releaseLock(); }
-  } catch(err) {
-    logError('addReceive', err);
-    return { success: false, message: err.message };
-  }
+function toggleSidebar() {
+  var sidebar = document.getElementById('sidebar');
+  var sidebarOverlay = document.getElementById('sidebarOverlay');
+  if (sidebar) sidebar.classList.toggle('open');
+  if (sidebarOverlay) sidebarOverlay.classList.toggle('hidden');
 }
 
-/** getReceives — ดึงประวัติการรับเข้า */
-function getReceives(token, filters) {
-  try {
-    if (!validateSession(token)) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-    var data = getSheetData('Receives');
-    if (filters && filters.date_from) {
-      data = data.filter(function(r){ return r.date >= filters.date_from; });
-    }
-    if (filters && filters.date_to) {
-      data = data.filter(function(r){ return r.date <= filters.date_to; });
-    }
-    data.sort(function(a,b){ return b.created_at > a.created_at ? 1 : -1; });
-    return { success: true, data: data };
-  } catch(err) { return { success: false, message: err.message }; }
+function toggleMenuSection(section) {
+  var group = document.querySelector('.menu-group[data-section="' + section + '"]');
+  if (!group) return;
+  var collapsed = group.classList.toggle('collapsed');
+  var state = JSON.parse(localStorage.getItem('menu_collapsed') || '{}');
+  state[section] = collapsed;
+  localStorage.setItem('menu_collapsed', JSON.stringify(state));
 }
 
-// ============================================================
-// WITHDRAWALS (คำขอเบิกวัสดุ)
-// ============================================================
-
-/** addWithdrawal — ยื่นคำขอเบิก */
-function addWithdrawal(token, wdData) {
-  try {
-    var session = validateSession(token);
-    if (!session) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-
-    var items = getSheetData('Items');
-    var item = null;
-    for (var i = 0; i < items.length; i++) {
-      if (items[i].id === wdData.item_id) { item = items[i]; break; }
-    }
-    if (!item) return { success: false, message: 'ไม่พบรายการวัสดุ' };
-
-    var qty = parseInt(wdData.quantity);
-    if (!qty || qty <= 0) return { success: false, message: 'กรุณาระบุจำนวนให้ถูกต้อง' };
-    if (qty > item.current_stock) return { success: false, message: 'จำนวนที่ขอเกินสต็อกคงเหลือ' };
-
-    var wdNo = generateRunningNumber('WD', 'Withdrawals');
-
-    var wd = {
-      id: Utilities.getUuid(),
-      withdraw_no: wdNo,
-      item_id: item.id,
-      item_name: item.name,
-      item_code: item.item_code,
-      quantity_requested: qty,
-      quantity_approved: 0,
-      unit: item.unit,
-      purpose: wdData.purpose || '',
-      note: wdData.note || '',
-      status: 'pending',
-      requested_by: session.user_id,
-      requested_by_name: session.name,
-      requested_at: new Date().toISOString(),
-      approved_by: '',
-      approved_by_name: '',
-      approved_at: '',
-      reject_reason: '',
-      via_qr: wdData.via_qr || false
-    };
-    saveToSheet('Withdrawals', wd);
-
-    var msg = '<b>คำขอเบิกใหม่</b> #' + wdNo
-      + '\nรายการ: ' + item.name
-      + '\nจำนวน: ' + qty + ' ' + item.unit
-      + '\nผู้ขอ: ' + session.name + ' (' + CONFIG.USER_ROLES[session.role].name + ')'
-      + '\nวัตถุประสงค์: ' + (wdData.purpose || '-')
-      + '\nสต็อกคงเหลือ: ' + item.current_stock + ' ' + item.unit;
-    sendTelegram(msg);
-
-    return { success: true, message: 'ยื่นคำขอเบิกเรียบร้อย รอการอนุมัติ', withdraw_no: wdNo };
-  } catch(err) {
-    logError('addWithdrawal', err);
-    return { success: false, message: err.message };
-  }
+function initMenuSections() {
+  var state = JSON.parse(localStorage.getItem('menu_collapsed') || '{}');
+  document.querySelectorAll('.menu-group').forEach(function(group) {
+    var section = group.getAttribute('data-section');
+    if (state[section]) group.classList.add('collapsed');
+    else group.classList.remove('collapsed');
+  });
 }
 
-/** getWithdrawals — ดึงคำขอเบิกทั้งหมด (Admin/Staff) หรือของตัวเอง (Employee) */
-function getWithdrawals(token, filters) {
-  try {
-    var session = validateSession(token);
-    if (!session) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-    var data = getSheetData('Withdrawals');
-    if (session.role === 'employee') {
-      data = data.filter(function(w){ return w.requested_by === session.user_id; });
-    }
-    if (filters && filters.status && filters.status !== 'all') {
-      data = data.filter(function(w){ return w.status === filters.status; });
-    }
-    data.sort(function(a,b){ return b.requested_at > a.requested_at ? 1 : -1; });
-    return { success: true, data: data };
-  } catch(err) { return { success: false, message: err.message }; }
+function renderManual() {
+  function mCard(num, icon, iconBg, title, items) {
+    var h = '<div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">';
+    h += '<div class="flex items-center gap-3 px-5 py-4 border-b border-gray-100">';
+    h += '<div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ' + iconBg + '">';
+    h += '<i class="' + icon + ' text-white text-base"></i></div>';
+    h += '<div><span class="text-xs text-gray-400 font-medium">ขั้นตอนที่ ' + num + '</span>';
+    h += '<h4 class="text-sm font-bold text-gray-800 leading-tight">' + title + '</h4></div></div>';
+    h += '<ul class="px-5 py-4 space-y-2.5">';
+    items.forEach(function(item) {
+      h += '<li class="flex items-start gap-2.5 text-sm text-gray-600">';
+      h += '<span class="mt-1 w-1.5 h-1.5 rounded-full bg-navy-400 flex-shrink-0"></span>';
+      h += '<span>' + item + '</span></li>';
+    });
+    h += '</ul></div>';
+    return h;
+  }
+
+  var sections = [
+    { num: 1, icon: 'fi fi-rr-sign-in', bg: 'bg-blue-500', title: 'การเข้าสู่ระบบ', items: [
+      'เลือกบทบาท: <b class="text-navy-700">ผู้ดูแลระบบ</b> / <b class="text-navy-700">เจ้าหน้าที่</b> / <b class="text-navy-700">พนักงาน</b>',
+      'กรอกชื่อผู้ใช้งานและรหัสผ่านที่ได้รับ',
+      'กดปุ่ม <b>"เข้าสู่ระบบ"</b> หากลืมรหัสผ่านให้กด "ลืมรหัสผ่าน"'
+    ]},
+    { num: 2, icon: 'fi fi-rr-home', bg: 'bg-indigo-500', title: 'ภาพรวมระบบ (Dashboard)', items: [
+      'ดูสรุปจำนวนวัสดุ สต็อกต่ำ/หมด รออนุมัติ และเคลื่อนไหววันนี้',
+      'กราฟสถิติรับ-เบิก ย้อนหลัง 6 เดือนล่าสุด',
+      'รายการวัสดุใกล้หมดสต็อกแบบ real-time'
+    ]},
+    { num: 3, icon: 'fi fi-rr-box-open-full', bg: 'bg-cyan-500', title: 'จัดการรายการวัสดุ', items: [
+      '<b>เพิ่มวัสดุ:</b> กรอกชื่อ รหัส หมวดหมู่ หน่วยนับ จำนวนขั้นต่ำ และราคา',
+      '<b>แก้ไข/ลบ:</b> คลิกไอคอนดินสอหรือถังขยะในตารางรายการ',
+      '<b>อัปโหลดรูปภาพ:</b> กด "เลือกรูป" ในฟอร์มเพิ่ม/แก้ไข',
+      '<b>พิมพ์ QR Code:</b> ไปที่เมนู "พิมพ์ QR สติ๊กเกอร์" เลือกวัสดุแล้วพิมพ์'
+    ]},
+    { num: 4, icon: 'fi fi-rr-layers', bg: 'bg-teal-500', title: 'สต็อกคงเหลือ', items: [
+      'ดูสต็อกรายการวัสดุทั้งหมดแบบภาพรวม',
+      'ตัวกรองตามหมวดหมู่และสถานะสต็อก',
+      'สีแสดงสถานะ: <b class="text-green-600">ปกติ</b> / <b class="text-amber-500">ใกล้หมด</b> / <b class="text-red-600">หมด</b>'
+    ]},
+    { num: 5, icon: 'fi fi-rr-inbox-in', bg: 'bg-green-500', title: 'รับวัสดุเข้าคลัง', items: [
+      'เลือกวัสดุที่ต้องการรับเข้า',
+      'กรอกจำนวนที่รับเข้า ระบุผู้รับและเลขที่เอกสาร',
+      'ระบบบันทึกประวัติและเพิ่มจำนวนสต็อกอัตโนมัติ'
+    ]},
+    { num: 6, icon: 'fi fi-rr-inbox-out', bg: 'bg-orange-500', title: 'เบิกวัสดุ', items: [
+      'ค้นหาวัสดุที่ต้องการ หรือสแกน QR Code บนสติ๊กเกอร์',
+      'กรอกจำนวนที่ต้องการเบิก เลือกผู้รับและหน่วยงาน',
+      'ส่งคำขอเบิก → รอผู้ดูแลระบบอนุมัติก่อนหักสต็อก'
+    ]},
+    { num: 7, icon: 'fi fi-rr-check-circle', bg: 'bg-emerald-500', title: 'อนุมัติการเบิก (เฉพาะผู้ดูแลระบบ)', items: [
+      'เข้าเมนู "อนุมัติการเบิก" เพื่อดูรายการที่รอดำเนินการ',
+      'กด ✓ เพื่ออนุมัติ หรือ ✗ เพื่อปฏิเสธพร้อมระบุเหตุผล',
+      'เมื่ออนุมัติ ระบบหักสต็อกและบันทึกประวัติอัตโนมัติ'
+    ]},
+    { num: 8, icon: 'fi fi-rr-chart-histogram', bg: 'bg-purple-500', title: 'รายงานวัสดุ', items: [
+      'รายงานการตรวจสอบพัสดุประจำปีงบประมาณ',
+      'รายงานการเบิก-รับ แยกตามหมวดหมู่และเดือน',
+      'พิมพ์เป็น PDF หรือ export ไฟล์ Excel'
+    ]},
+    { num: 9, icon: 'fi fi-rr-settings', bg: 'bg-slate-500', title: 'ตั้งค่าระบบ', items: [
+      'ข้อมูลองค์กร: ชื่อระบบ โลโก้ ชื่อองค์กร ปีงบประมาณ',
+      'จัดการผู้ใช้: เพิ่ม/แก้ไข/ลบ ผู้ใช้งานและกำหนดสิทธิ์',
+      'หมวดหมู่: จัดการหมวดหมู่วัสดุสิ้นเปลือง'
+    ]},
+    { num: 10, icon: 'fi fi-rr-bulb', bg: 'bg-yellow-500', title: 'เคล็ดลับการใช้งาน', items: [
+      'ใช้ช่อง <b>"ค้นหาเร็ว"</b> บนแถบด้านบนเพื่อหาวัสดุได้ทันที',
+      'สแกน QR Code บนสติ๊กเกอร์เพื่อเบิกวัสดุโดยตรง ไม่ต้องค้นหา',
+      'ข้อมูลสต็อกอัปเดต real-time ทุกครั้งที่มีการรับ/เบิก'
+    ]}
+  ];
+
+  var html = '<div class="fade-in">';
+
+  // Hero header
+  html += '<div class="bg-gradient-to-r from-navy-800 to-navy-600 rounded-2xl p-6 mb-6 text-white">';
+  html += '<div class="flex items-center gap-4">';
+  html += '<div class="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center flex-shrink-0"><i class="fi fi-rr-book text-white text-2xl"></i></div>';
+  html += '<div><h2 class="text-xl font-bold">คู่มือการใช้งาน</h2>';
+  html += '<p class="text-blue-200 text-sm mt-1">ระบบบริหารจัดการวัสดุสิ้นเปลือง</p></div></div>';
+  html += '<div class="grid grid-cols-3 gap-3 mt-5">';
+  html += '<div class="bg-white/10 rounded-xl p-3 text-center"><div class="text-lg font-bold">10</div><div class="text-xs text-blue-200">หัวข้อ</div></div>';
+  html += '<div class="bg-white/10 rounded-xl p-3 text-center"><div class="text-lg font-bold">3</div><div class="text-xs text-blue-200">บทบาทผู้ใช้</div></div>';
+  html += '<div class="bg-white/10 rounded-xl p-3 text-center"><div class="text-lg font-bold">QR</div><div class="text-xs text-blue-200">เบิกผ่านมือถือ</div></div>';
+  html += '</div></div>';
+
+  // Roles info bar
+  html += '<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">';
+  html += '<div class="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-center gap-3"><i class="fi fi-rr-shield-check text-blue-600 text-lg"></i><div><p class="text-xs font-bold text-blue-700">ผู้ดูแลระบบ</p><p class="text-xs text-blue-500">เข้าถึงได้ทุกเมนู อนุมัติ จัดการผู้ใช้</p></div></div>';
+  html += '<div class="bg-green-50 border border-green-100 rounded-xl px-4 py-3 flex items-center gap-3"><i class="fi fi-rr-user-gear text-green-600 text-lg"></i><div><p class="text-xs font-bold text-green-700">เจ้าหน้าที่</p><p class="text-xs text-green-500">รับ-เบิกวัสดุ ดูรายงาน</p></div></div>';
+  html += '<div class="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 flex items-center gap-3"><i class="fi fi-rr-user text-amber-600 text-lg"></i><div><p class="text-xs font-bold text-amber-700">พนักงาน</p><p class="text-xs text-amber-500">เบิกวัสดุ ดูสต็อกคงเหลือ</p></div></div>';
+  html += '</div>';
+
+  // Cards grid
+  html += '<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">';
+  sections.forEach(function(s) {
+    html += mCard(s.num, s.icon, s.bg, s.title, s.items);
+  });
+  html += '</div></div>';
+
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
 }
 
-/** approveWithdrawal — อนุมัติการเบิก (Admin เท่านั้น) */
-function approveWithdrawal(token, wdId, qtyApproved) {
-  try {
-    var session = validateSession(token);
-    if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์อนุมัติ' };
-    var lock = LockService.getScriptLock();
-    lock.tryLock(10000);
-    try {
-      var wds = getSheetData('Withdrawals');
-      var wd = null;
-      for (var i = 0; i < wds.length; i++) {
-        if (wds[i].id === wdId) { wd = wds[i]; break; }
-      }
-      if (!wd) return { success: false, message: 'ไม่พบคำขอเบิก' };
-      if (wd.status !== 'pending') return { success: false, message: 'คำขอนี้ดำเนินการแล้ว' };
-
-      var qty = parseInt(qtyApproved) || wd.quantity_requested;
-
-      var items = getSheetData('Items');
-      var item = null;
-      for (var j = 0; j < items.length; j++) {
-        if (items[j].id === wd.item_id) { item = items[j]; break; }
-      }
-      if (!item) return { success: false, message: 'ไม่พบรายการวัสดุ' };
-      if (qty > item.current_stock) return { success: false, message: 'สต็อกไม่พอ (' + item.current_stock + ' ' + item.unit + ')' };
-
-      var stockBefore = item.current_stock;
-      var stockAfter = stockBefore - qty;
-      updateInSheet('Items', item.id, { current_stock: stockAfter });
-
-      var now = new Date().toISOString();
-      updateInSheet('Withdrawals', wdId, {
-        status: 'approved',
-        quantity_approved: qty,
-        approved_by: session.user_id,
-        approved_by_name: session.name,
-        approved_at: now
-      });
-
-      saveToSheet('Transactions', {
-        id: Utilities.getUuid(),
-        type: 'withdraw',
-        item_id: item.id,
-        item_name: item.name,
-        item_code: item.item_code,
-        quantity: qty,
-        stock_before: stockBefore,
-        stock_after: stockAfter,
-        ref_id: wd.withdraw_no,
-        actor_id: wd.requested_by,
-        actor_name: wd.requested_by_name,
-        actor_role: 'withdraw',
-        approved_by_name: session.name,
-        note: wd.note || '',
-        date: now.split('T')[0]
-      });
-
-      var cfg = getConfig();
-      var threshold = cfg.low_stock_threshold || CONFIG.LOW_STOCK_DEFAULT;
-      var lowMsg = '';
-      if (stockAfter <= (item.min_stock || threshold)) {
-        lowMsg = '\n<b>คำเตือน: สต็อกต่ำกว่าขั้นต่ำ</b> เหลือ ' + stockAfter + ' ' + item.unit + ' (ขั้นต่ำ: ' + item.min_stock + ')';
-      }
-
-      var msg = '<b>อนุมัติการเบิก</b> #' + wd.withdraw_no
-        + '\nรายการ: ' + item.name
-        + '\nอนุมัติ: ' + qty + ' ' + item.unit
-        + '\nผู้เบิก: ' + wd.requested_by_name
-        + '\nสต็อกคงเหลือ: ' + stockAfter + ' ' + item.unit
-        + '\nอนุมัติโดย: ' + session.name
-        + lowMsg;
-      sendTelegram(msg);
-
-      return { success: true, message: 'อนุมัติการเบิกเรียบร้อย' };
-    } finally { lock.releaseLock(); }
-  } catch(err) {
-    logError('approveWithdrawal', err);
-    return { success: false, message: err.message };
-  }
+function expandActiveMenuSection(page) {
+  var map = {
+    dashboard: 'main', stock: 'main',
+    items: 'inventory', receive: 'inventory', stocktake: 'inventory', printqr: 'inventory',
+    withdraw: 'withdraw', approve: 'withdraw', transactions: 'withdraw',
+    reports: 'report', users: 'admin', manual: 'manual'
+  };
+  var section = map[page];
+  if (!section) return;
+  var group = document.querySelector('.menu-group[data-section="' + section + '"]');
+  if (group) group.classList.remove('collapsed');
 }
 
-/** rejectWithdrawal — ปฏิเสธการเบิก (Admin เท่านั้น) */
-function rejectWithdrawal(token, wdId, reason) {
-  try {
-    var session = validateSession(token);
-    if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์' };
-    var wds = getSheetData('Withdrawals');
-    var wd = null;
-    for (var i = 0; i < wds.length; i++) {
-      if (wds[i].id === wdId) { wd = wds[i]; break; }
-    }
-    if (!wd || wd.status !== 'pending') return { success: false, message: 'ไม่พบคำขอหรือดำเนินการแล้ว' };
-    updateInSheet('Withdrawals', wdId, {
-      status: 'rejected',
-      approved_by: session.user_id,
-      approved_by_name: session.name,
-      approved_at: new Date().toISOString(),
-      reject_reason: reason || ''
-    });
-    sendTelegram('<b>ปฏิเสธการเบิก</b> #' + wd.withdraw_no
-      + '\nรายการ: ' + (wd.item_name || wd.item_code || '-')
-      + '\nผู้ขอ: ' + wd.requested_by_name
-      + '\nเหตุผล: ' + (reason || '-')
-      + '\nโดย: ' + session.name);
-    return { success: true, message: 'ปฏิเสธคำขอเรียบร้อย' };
-  } catch(err) {
-    logError('rejectWithdrawal', err);
-    return { success: false, message: err.message };
-  }
+// ===== GLOBAL SEARCH (วัสดุสิ้นเปลืองเท่านั้น) =====
+var _globalSearchTimer;
+function debounceGlobalSearch() {
+  clearTimeout(_globalSearchTimer);
+  _globalSearchTimer = setTimeout(performGlobalSearch, 300);
+}
+function performGlobalSearch() {
+  var searchInput = document.getElementById('globalSearch');
+  var resultsDiv = document.getElementById('globalSearchResults');
+  if (!searchInput || !resultsDiv) return;
+  
+  var q = searchInput.value || '';
+  if (!q || q.length < 2) { resultsDiv.classList.add('hidden'); return; }
+  var term = q.toLowerCase();
+  var matches = [];
+  
+  (_itemsData || []).forEach(function(i) {
+    if (i.active === false) return;
+    if ((i.name || '').toLowerCase().includes(term) || (i.item_code || '').toLowerCase().includes(term) || (i.category || '').toLowerCase().includes(term)) {
+      matches.push({ type: 'item', id: i.id, name: i.name, code: i.item_code, sub: 'คงเหลือ ' + (i.current_stock || 0) + ' ' + (i.unit || ''), image: i.image_file_id });
+    }
+  });
+  
+  matches = matches.slice(0, 10);
+  if (matches.length === 0) { resultsDiv.classList.add('hidden'); return; }
+  var html = '';
+  matches.forEach(function(m) {
+    var iconClass = 'fi fi-rr-box-open-full';
+    var label = 'วัสดุ';
+    var imgHtml = m.image ? '<img src="' + imgUrl(m.image) + '" class="w-8 h-8 object-cover rounded-lg border border-gray-200" loading="lazy">' : '<div class="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center"><i class="' + iconClass + ' text-gray-400 text-xs"></i></div>';
+    html += '<div class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0" onclick="globalSearchGoTo(\'' + m.id + '\',\'' + m.type + '\')">';
+    html += imgHtml;
+    html += '<div class="flex-1 min-w-0"><p class="text-sm font-medium text-gray-800 truncate">' + escHtml(m.name) + '</p>';
+    html += '<p class="text-xs text-gray-500">' + escHtml(m.code || '') + ' • ' + escHtml(m.sub) + ' <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700">' + label + '</span></p></div>';
+    html += '<i class="fi fi-rr-angle-right text-gray-400 text-xs"></i></div>';
+  });
+  resultsDiv.innerHTML = html;
+  resultsDiv.classList.remove('hidden');
+}
+function globalSearchGoTo(id, type) {
+  var searchInput = document.getElementById('globalSearch');
+  var resultsDiv = document.getElementById('globalSearchResults');
+  if (searchInput) searchInput.value = '';
+  if (resultsDiv) resultsDiv.classList.add('hidden');
+  showItemDetailModal(id);
+}
+window.addEventListener('click', function(e) {
+  var gs = document.getElementById('globalSearch');
+  var gr = document.getElementById('globalSearchResults');
+  if (gs && gr && !gs.contains(e.target) && !gr.contains(e.target)) {
+    gr.classList.add('hidden');
+  }
+});
+
+// ===== DASHBOARD =====
+var _charts = {};
+
+function renderDashboard() {
+  showLoading('โหลดข้อมูล Dashboard...');
+  Promise.all([
+    callAPI('getDashboardStats', AUTH.token),
+    callAPI('getWithdrawals', AUTH.token, { status: 'approved' })
+  ]).then(function(results) {
+    hideLoading();
+    var res = results[0];
+    var wdRes = results[1];
+    if (!res.success) { showError(res.message); return; }
+    var d = res;
+    var kpi = res.kpi;
+    var withdrawals = (wdRes.data || []).filter(function(w) { return w.status === 'approved'; });
+
+    var badge = document.getElementById('pendingBadge');
+    if (badge) {
+      if (kpi.pending > 0) { badge.textContent = kpi.pending; badge.classList.remove('hidden'); }
+      else { badge.classList.add('hidden'); }
+    }
+
+    var lowBadge = document.getElementById('lowStockBadge');
+    if (lowBadge) {
+      if (kpi.low_stock > 0) { lowBadge.textContent = kpi.low_stock; lowBadge.classList.remove('hidden'); }
+      else { lowBadge.classList.add('hidden'); }
+    }
+
+    var html = '<div class="fade-in space-y-5">';
+
+    if (d.low_stock_items && d.low_stock_items.length > 0) {
+      html += '<div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">';
+      html += '<i class="fi fi-rr-triangle-warning text-amber-500 text-lg mt-0.5 flex-shrink-0"></i>';
+      html += '<div class="flex-1">';
+      html += '<p class="font-semibold text-amber-800 text-sm">วัสดุใกล้หมด/หมดสต็อก</p>';
+      html += '<p class="text-xs text-amber-700 mt-1">' + d.low_stock_items.map(function(i) { return i.name + ' (เหลือ ' + i.current_stock + ' ' + i.unit + ')'; }).join(' • ') + '</p>';
+      html += '</div></div>';
+    }
+
+    // KPI สรุปสถานะวัสดุสิ้นเปลือง
+    html += '<div class="flex items-center justify-between mb-2">';
+    html += '<p class="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5"><i class="fi fi-rr-box-open-full text-blue-500"></i> วัสดุสิ้นเปลือง</p>';
+    html += '<button onclick="loadPage(\'stock\')" class="text-xs text-navy-600 hover:underline">ดูสต็อก →</button></div>';
+    html += '<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">';
+    
+    var kpis = [
+      { label: 'รายการวัสดุ', value: kpi.total_items, icon: 'fi-rr-box-open-full', color: 'bg-blue-100', iconColor: 'text-blue-600', danger: false },
+      { label: 'สต็อกต่ำ/หมด', value: kpi.low_stock, icon: 'fi-rr-triangle-warning', color: 'bg-amber-100', iconColor: 'text-amber-600', danger: kpi.low_stock > 0 },
+      { label: 'รออนุมัติ', value: kpi.pending, icon: 'fi-rr-time-forward', color: 'bg-purple-100', iconColor: 'text-purple-600', danger: kpi.pending > 0 },
+      { label: 'เคลื่อนไหววันนี้', value: kpi.today_tx, icon: 'fi-rr-activity', color: 'bg-green-100', iconColor: 'text-green-600', danger: false }
+    ];
+    
+    kpis.forEach(function(k) {
+      html += '<div class="card kpi-card p-4">';
+      html += '<div class="flex items-center justify-between mb-3">';
+      html += '<div class="w-11 h-11 ' + k.color + ' rounded-xl flex items-center justify-center"><i class="fi ' + k.icon + ' ' + k.iconColor + ' text-xl"></i></div>';
+      if (k.danger && k.value > 0) html += '<span class="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">!</span>';
+      html += '</div>';
+      html += '<p class="text-2xl font-bold text-gray-800">' + k.value + '</p>';
+      html += '<p class="text-xs text-gray-500 mt-0.5">' + k.label + '</p>';
+      html += '</div>';
+    });
+    html += '</div>';
+
+    // Workflow การทำงาน
+    html += '<div class="card">';
+    html += '<div class="card-header"><h3 class="font-semibold text-gray-700 text-sm flex items-center gap-2"><i class="fi fi-rr-arrow-right text-navy-600"></i> Workflow การเบิกวัสดุ</h3></div>';
+    html += '<div class="card-body"><div class="flex items-center justify-center gap-2 flex-wrap">';
+    var wfSteps = [
+      { label: 'ยื่นขอ', color: 'bg-blue-500', icon: 'fi-rr-inbox-out' },
+      { label: 'รออนุมัติ', color: 'bg-amber-500', icon: 'fi-rr-time-forward' },
+      { label: 'อนุมัติ', color: 'bg-green-500', icon: 'fi-rr-check-circle' },
+      { label: 'จ่ายวัสดุ', color: 'bg-purple-500', icon: 'fi-rr-hand-holding-box' },
+      { label: 'เสร็จสิ้น', color: 'bg-teal-500', icon: 'fi-rr-badge-check' }
+    ];
+    var wfCounts = [kpi.pending + (kpi.today_tx || 0), kpi.pending, 0, kpi.today_tx, 0];
+    wfSteps.forEach(function(s, i) {
+      html += '<div class="text-center"><div class="wf-bubble ' + s.color + ' mx-auto"><i class="fi ' + s.icon + ' text-base"></i></div>';
+      html += '<p class="text-xs text-gray-600 mt-1">' + s.label + '</p>';
+      html += '<p class="text-sm font-bold text-navy-700">' + (wfCounts[i] || 0) + '</p></div>';
+      if (i < wfSteps.length - 1) html += '<i class="fi fi-rr-angle-right wf-arrow mt-3"></i>';
+    });
+    html += '</div></div></div>';
+
+    // ส่วนของกราฟสรุปสถิติ
+    html += '<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">';
+    html += '<div class="card lg:col-span-2"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm flex items-center gap-2"><i class="fi fi-rr-chart-histogram text-navy-600"></i> สถิติรับ-เบิก 6 เดือนล่าสุด</h3></div>';
+    html += '<div class="card-body"><div style="position:relative;height:220px"><canvas id="chartMonthly"></canvas></div></div></div>';
+    html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm flex items-center gap-2"><i class="fi fi-rr-chart-pie text-navy-600"></i> สัดส่วนวัสดุ</h3></div>';
+    html += '<div class="card-body"><div style="position:relative;height:220px"><canvas id="chartCategory"></canvas></div></div></div>';
+    html += '</div>';
+
+    // ส่วนประวัติล่าสุดและการอนุมัติ
+    html += '<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">';
+    html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm">รายการเคลื่อนไหวล่าสุด</h3><button onclick="loadPage(\'transactions\')" class="text-xs text-navy-600 hover:underline">ดูทั้งหมด</button></div>';
+    html += '<div class="card-body p-0"><div class="divide-y">';
+    if (d.recent_transactions && d.recent_transactions.length > 0) {
+      d.recent_transactions.slice(0, 6).forEach(function(t) {
+        var isR = t.type === 'receive';
+        html += '<div class="flex items-center gap-3 px-4 py-3">';
+        html += '<div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ' + (isR ? 'bg-blue-100' : 'bg-purple-100') + '">';
+        html += '<i class="fi ' + (isR ? 'fi-rr-inbox-in text-blue-600' : 'fi-rr-inbox-out text-purple-600') + ' text-sm"></i></div>';
+        html += '<div class="flex-1 min-w-0"><p class="text-xs font-medium text-gray-700 truncate">' + escHtml(t.item_name) + '</p>';
+        html += '<p class="text-xs text-gray-400">' + (isR ? '+' : '-') + t.quantity + ' ' + t.unit + ' • ' + (t.actor_name || '-') + '</p></div>';
+        html += '<span class="text-xs text-gray-400 flex-shrink-0">' + formatDate(t.date) + '</span></div>';
+      });
+    } else { html += '<p class="text-center text-xs text-gray-400 py-6">ยังไม่มีรายการ</p>'; }
+    html += '</div></div></div>';
+
+    html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm">คำขอเบิกรออนุมัติ</h3>';
+    if (AUTH.user.role === 'admin') html += '<button onclick="loadPage(\'approve\')" class="text-xs text-navy-600 hover:underline">จัดการ</button>';
+    html += '</div><div class="card-body p-0"><div class="divide-y">';
+    if (d.recent_pending && d.recent_pending.length > 0) {
+      d.recent_pending.forEach(function(w) {
+        html += '<div class="flex items-center gap-3 px-4 py-3">';
+        html += '<div class="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0"><i class="fi fi-rr-time-forward text-amber-600 text-sm"></i></div>';
+        html += '<div class="flex-1 min-w-0"><p class="text-xs font-medium text-gray-700 truncate">' + escHtml(w.item_name) + '</p>';
+        html += '<p class="text-xs text-gray-400">' + w.quantity_requested + ' ' + w.unit + ' • ' + escHtml(w.requested_by_name) + '</p></div>';
+        if (AUTH.user.role === 'admin') {
+          html += '<div class="flex gap-1 flex-shrink-0">';
+          html += '<button onclick="quickApprove(\'' + w.id + '\',' + w.quantity_requested + ')" class="btn-success btn-sm text-xs px-2 py-1 rounded-lg"><i class="fi fi-rr-check"></i></button>';
+          html += '<button onclick="quickReject(\'' + w.id + '\')" class="btn-danger btn-sm text-xs px-2 py-1 rounded-lg"><i class="fi fi-rr-cross"></i></button></div>';
+        }
+        html += '</div>';
+      });
+    } else { html += '<p class="text-center text-xs text-gray-400 py-6">ไม่มีคำขอรออนุมัติ</p>'; }
+    html += '</div></div></div>';
+    html += '</div>';
+
+    // Top 5 Item วัสดุเบิกสูงสุด
+    if (d.top_items && d.top_items.length > 0) {
+      html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm flex items-center gap-2"><i class="fi fi-rr-star text-amber-500"></i> Top 5 วัสดุที่เบิกมากสุด</h3></div>';
+      html += '<div class="card-body space-y-3">';
+      var maxQty = d.top_items[0].qty || 1;
+      d.top_items.forEach(function(item, idx) {
+        var pct = Math.round(item.qty / maxQty * 100);
+        html += '<div class="flex items-center gap-3">';
+        html += '<span class="text-xs font-bold text-gray-400 w-4 text-right">' + (idx + 1) + '</span>';
+        html += '<div class="flex-1"><p class="text-xs font-medium text-gray-700 mb-1 truncate">' + escHtml(item.name) + '</p>';
+        html += '<div class="progress-bar"><div class="progress-fill bg-navy-600" style="width:' + pct + '%"></div></div></div>';
+        html += '<span class="text-xs font-bold text-navy-700 w-8 text-right">' + item.qty + '</span></div>';
+      });
+      html += '</div></div>';
+    }
+
+    html += '</div>';
+    
+    var contentEl = document.getElementById('mainContent');
+    if (contentEl) contentEl.innerHTML = html;
+
+    // Render ชาร์ตสถิติ
+    setTimeout(function() {
+      if (_charts.monthly) _charts.monthly.destroy();
+      var ctxM = document.getElementById('chartMonthly');
+      if (ctxM) {
+        _charts.monthly = new Chart(ctxM, {
+          type: 'bar',
+          data: {
+            labels: d.monthly.map(function(m) { return m.label; }),
+            datasets: [
+              { label: 'รับเข้า', data: d.monthly.map(function(m) { return m.receive; }), backgroundColor: '#3b82f6', borderRadius: 6, barPercentage: 0.6 },
+              { label: 'เบิกออก', data: d.monthly.map(function(m) { return m.withdraw; }), backgroundColor: '#8b5cf6', borderRadius: 6, barPercentage: 0.6 }
+            ]
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { font: { family: 'Sarabun', size: 11 }, boxWidth: 12 } } }, scales: { y: { ticks: { font: { family: 'Sarabun', size: 11 } }, grid: { color: '#f3f4f6' } }, x: { ticks: { font: { family: 'Sarabun', size: 11 } }, grid: { display: false } } } }
+        });
+      }
+      
+      if (_charts.category) _charts.category.destroy();
+      var ctxC = document.getElementById('chartCategory');
+      if (ctxC && d.category_stock) {
+        var cats = Object.keys(d.category_stock);
+        var vals = cats.map(function(k) { return d.category_stock[k]; });
+        var colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899'];
+        _charts.category = new Chart(ctxC, {
+          type: 'doughnut',
+          data: { labels: cats, datasets: [ { data: vals, backgroundColor: colors.slice(0, cats.length), borderWidth: 0, hoverOffset: 6 } ] },
+          options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Sarabun', size: 10 }, boxWidth: 10, padding: 8 } } } }
+        });
+      }
+    }, 100);
+
+  }).catch(function(err) { hideLoading(); showError('โหลด Dashboard ไม่สำเร็จ'); });
 }
 
-/** cancelWithdrawal — พนักงานยกเลิกคำขอเบิกตัวเอง */
-function cancelWithdrawal(token, wdId) {
-  try {
-    var session = validateSession(token);
-    if (!session) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-    var wds = getSheetData('Withdrawals');
-    var wd = null;
-    for (var i = 0; i < wds.length; i++) {
-      if (wds[i].id === wdId) { wd = wds[i]; break; }
-    }
-    if (!wd) return { success: false, message: 'ไม่พบคำขอ' };
-    if (wd.requested_by !== session.user_id) return { success: false, message: 'ไม่มีสิทธิ์ยกเลิก' };
-    if (wd.status !== 'pending') return { success: false, message: 'คำขอนี้ดำเนินการแล้ว' };
-    updateInSheet('Withdrawals', wdId, {
-      status: 'rejected',
-      reject_reason: 'ยกเลิกโดยผู้ขอ',
-      approved_by: session.user_id,
-      approved_by_name: session.name,
-      approved_at: new Date().toISOString()
-    });
-    sendTelegram('<b>ยกเลิกการเบิก</b> #' + wd.withdraw_no
-      + '\nรายการ: ' + (wd.item_name || wd.item_code || '-')
-      + '\nผู้ขอ: ' + wd.requested_by_name
-      + '\nโดย: ' + session.name);
-    return { success: true, message: 'ยกเลิกคำขอเรียบร้อย' };
-  } catch(err) {
-    logError('cancelWithdrawal', err);
-    return { success: false, message: err.message };
-  }
+function quickApprove(wdId, qty) {
+  showConfirm('อนุมัติการเบิก', 'ยืนยันอนุมัติ ' + qty + ' รายการ?', function() {
+    showLoading('กำลังอนุมัติ...');
+    callAPI('approveWithdrawal', AUTH.token, wdId, qty).then(function(res) {
+      hideLoading();
+      if (res.success) { showSuccess('อนุมัติสำเร็จ'); renderDashboard(); }
+      else showError(res.message);
+    }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+  }, 'อนุมัติ');
 }
 
-// ============================================================
-// TRANSACTIONS + DASHBOARD
-// ============================================================
-
-/** getTransactions — ดึงประวัติ transaction */
-function getTransactions(token, filters) {
-  try {
-    var session = validateSession(token);
-    if (!session) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-    var data = getSheetData('Transactions');
-    if (session.role === 'employee') {
-      data = data.filter(function(t){ return t.actor_id === session.user_id; });
-    }
-    if (filters) {
-      if (filters.type && filters.type !== 'all') data = data.filter(function(t){ return t.type === filters.type; });
-      if (filters.date_from) data = data.filter(function(t){ return (t.date||'') >= filters.date_from; });
-      if (filters.date_to)   data = data.filter(function(t){ return (t.date||'') <= filters.date_to; });
-    }
-    data.sort(function(a,b){ return b.created_at > a.created_at ? 1 : -1; });
-    return { success: true, data: data };
-  } catch(err) { return { success: false, message: err.message }; }
+function quickReject(wdId) {
+  Swal.fire({
+    title: 'เหตุผลที่ปฏิเสธ', input: 'text', inputPlaceholder: 'ระบุเหตุผล...',
+    showCancelButton: true, confirmButtonText: 'ปฏิเสธ', cancelButtonText: 'ยกเลิก',
+    inputValidator: function(v) { if (!v) return 'กรุณาระบุเหตุผล'; },
+    customClass: { popup: 'swal2-popup' }
+  }).then(function(r) {
+    if (!r.isConfirmed) return;
+    showLoading('กำลังดำเนินการ...');
+    callAPI('rejectWithdrawal', AUTH.token, wdId, r.value).then(function(res) {
+      hideLoading();
+      if (res.success) { showSuccess('ปฏิเสธคำขอแล้ว'); renderDashboard(); }
+      else showError(res.message);
+    }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+  });
 }
 
-/** getDashboardStats — ข้อมูล Dashboard (ถอดฟิลด์สถิติครุภัณฑ์ออกแล้ว) */
-function getDashboardStats(token) {
-  try {
-    var session = validateSession(token);
-    if (!session) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+// ===== ITEMS =====
+var _itemsData = [];
+var _itemsPage = 1;
+var _itemsFilter = { search: '', category: 'all', stock: 'all' };
+var _itemImageFileId = null;
+var _itemsCacheTime = 0;
+var ITEMS_CACHE_TTL = 30000;
 
-    var items = getSheetData('Items').filter(function(i){ return i.active !== false; });
-    var wds   = getSheetData('Withdrawals');
-    var txs   = getSheetData('Transactions');
-    var today = new Date().toISOString().split('T')[0];
-    var cfg   = getConfig();
-    var threshold = cfg.low_stock_threshold || CONFIG.LOW_STOCK_DEFAULT;
-
-    // KPI ของวัสดุสิ้นเปลือง
-    var totalItems = items.length;
-    var lowStockItems = items.filter(function(i){ return (i.current_stock||0) <= (i.min_stock || threshold); });
-    var pendingWds = wds.filter(function(w){ return w.status === 'pending'; });
-    var todayTxs  = txs.filter(function(t){ return t.date === today; });
-
-    // กราฟรายเดือน (6 เดือนล่าสุด)
-    var monthlyData = {};
-    var now = new Date();
-    for (var m = 5; m >= 0; m--) {
-      var d = new Date(now.getFullYear(), now.getMonth() - m, 1);
-      var key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2,'0');
-      monthlyData[key] = { receive: 0, withdraw: 0, label: (d.getMonth() + 1) + '/' + (d.getFullYear() + 543) };
-    }
-    txs.forEach(function(t) {
-      var key = (t.date || '').substring(0, 7);
-      if (monthlyData[key]) {
-        if (t.type === 'receive')  monthlyData[key].receive  += t.quantity || 0;
-        if (t.type === 'withdraw') monthlyData[key].withdraw += t.quantity || 0;
-      }
-    });
-
-    // Top 5 วัสดุที่เบิกมากสุด
-    var withdrawByItem = {};
-    wds.filter(function(w){ return w.status === 'approved'; }).forEach(function(w) {
-      withdrawByItem[w.item_name] = (withdrawByItem[w.item_name] || 0) + (w.quantity_approved || 0);
-    });
-    var topItems = Object.keys(withdrawByItem)
-      .map(function(k){ return { name: k, qty: withdrawByItem[k] }; })
-      .sort(function(a,b){ return b.qty - a.qty; })
-      .slice(0, 5);
-
-    // สต็อกแต่ละหมวด
-    var categoryStock = {};
-    items.forEach(function(i) {
-      var cat = i.category || 'อื่นๆ';
-      categoryStock[cat] = (categoryStock[cat] || 0) + 1;
-    });
-
-    // รายการล่าสุด
-    var recentTxs = txs.slice().sort(function(a,b){ return b.created_at > a.created_at ? 1 : -1; }).slice(0, 10);
-    var recentPending = wds.filter(function(w){ return w.status === 'pending'; })
-      .sort(function(a,b){ return b.requested_at > a.requested_at ? 1 : -1; }).slice(0, 5);
-
-    return {
-      success: true,
-      kpi: {
-        total_items: totalItems,
-        low_stock: lowStockItems.length,
-        pending: pendingWds.length,
-        today_tx: todayTxs.length
-      },
-      monthly: Object.values(monthlyData),
-      top_items: topItems,
-      category_stock: categoryStock,
-      low_stock_items: lowItems.slice(0, 5),
-      recent_transactions: recentTxs,
-      recent_pending: recentPending
-    };
-  } catch(err) {
-    logError('getDashboardStats', err);
-    return { success: false, message: err.message };
-  }
+function renderItems() {
+  if (AUTH.user.role !== 'admin') { loadPage('stock'); return; }
+  showLoading('โหลดรายการวัสดุ...');
+  if (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL) {
+    hideLoading();
+    updateLowStockBadge(_itemsData);
+    _itemsPage = 1;
+    buildItemsPage();
+    return;
+  }
+  callAPI('getItems', AUTH.token).then(function(res) {
+    hideLoading();
+    if (!res.success) { showError(res.message); return; }
+    _itemsData = res.data;
+    _itemsCacheTime = Date.now();
+    updateLowStockBadge(_itemsData);
+    _itemsPage = 1;
+    buildItemsPage();
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
-// ============================================================
-// USERS (จัดการผู้ใช้ — Admin)
-// ============================================================
+function buildItemsPage() {
+  var filtered = filterItems(_itemsData, _itemsFilter);
+  var paged    = paginate(filtered, _itemsPage);
+  var cats     = getCategoryList(_itemsData);
 
-/** getUsers — ดึงรายชื่อผู้ใช้ทั้งหมด */
-function getUsers(token) {
-  try {
-    var session = validateSession(token);
-    if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์' };
-    var users = getSheetData('Users').map(function(u) {
-      return { id:u.id, username:u.username, name:u.name, role:u.role, email:u.email, phone:u.phone||'', active:u.active, last_login:u.last_login||'', avatar:u.avatar||'' };
-    });
-    return { success: true, data: users };
-  } catch(err) { return { success: false, message: err.message }; }
+  var html = '<div class="fade-in space-y-4">';
+  html += '<div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">';
+  html += '<div class="flex gap-2 flex-wrap">';
+  html += '<div class="relative"><i class="fi fi-rr-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>';
+  html += '<input type="text" id="itemSearch" placeholder="ค้นหาวัสดุ..." value="' + escHtml(_itemsFilter.search) + '"';
+  html += ' onkeyup="debounceItemFilter()" class="pl-9 pr-4 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-500 w-48"></div>';
+  html += '<select id="itemCatFilter" onchange="applyItemFilter()" class="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-500">';
+  html += '<option value="all">ทุกหมวดหมู่</option>';
+  cats.forEach(function(c) { html += '<option value="' + escHtml(c) + '" ' + (_itemsFilter.category === c ? 'selected' : '') + '>' + escHtml(c) + '</option>'; });
+  html += '</select>';
+  html += '<select id="itemStockFilter" onchange="applyItemFilter()" class="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-500">';
+  html += '<option value="all">สต็อกทั้งหมด</option><option value="low" ' + (_itemsFilter.stock === 'low' ? 'selected' : '') + '>ใกล้หมด</option><option value="ok" ' + (_itemsFilter.stock === 'ok' ? 'selected' : '') + '>ปกติ</option>';
+  html += '</select></div>';
+  html += '<div class="flex gap-2">';
+  html += '<button onclick="downloadCSVSample()" class="btn-secondary flex items-center gap-2 whitespace-nowrap btn-sm"><i class="fi fi-rr-download"></i> ไฟล์ตัวอย่าง</button>';
+  html += '<button onclick="openImportCSVModal()" class="btn-success flex items-center gap-2 whitespace-nowrap btn-sm"><i class="fi fi-rr-upload"></i> นำเข้า CSV</button>';
+  html += '<button onclick="openAddItemModal()" class="btn-primary flex items-center gap-2 whitespace-nowrap"><i class="fi fi-rr-plus"></i> เพิ่มวัสดุใหม่</button></div></div>';
+
+  html += '<div class="flex gap-2 flex-wrap text-xs">';
+  html += '<span class="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full font-medium"><i class="fi fi-rr-box-open-full mr-1"></i>ทั้งหมด: ' + _itemsData.length + '</span>';
+  var lowCount = _itemsData.filter(function(i) { return i.current_stock <= i.min_stock; }).length;
+  if (lowCount > 0) html += '<span class="bg-amber-50 text-amber-700 px-3 py-1.5 rounded-full font-medium"><i class="fi fi-rr-triangle-warning mr-1"></i>ใกล้หมด: ' + lowCount + '</span>';
+  html += '</div>';
+
+  html += '<div class="card overflow-hidden">';
+  html += '<div class="hidden md:block overflow-x-auto">';
+  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-gray-600 text-xs">';
+  html += '<tr><th class="px-4 py-3 text-left w-10">#</th><th class="px-4 py-3 text-left w-14">รูป</th><th class="px-4 py-3 text-left">รหัส</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">ขนาด</th><th class="px-4 py-3 text-left">หน่วย</th><th class="px-4 py-3 text-left">หมวดหมู่</th><th class="px-4 py-3 text-center">สต็อก</th><th class="px-4 py-3 text-center">ขั้นต่ำ</th><th class="px-4 py-3 text-center">สถานะ</th><th class="px-4 py-3 text-center">จัดการ</th></tr></thead>';
+  html += '<tbody class="divide-y divide-gray-100">';
+  if (paged.length === 0) {
+    html += '<tr><td colspan="11" class="text-center py-10 text-gray-400">ไม่พบรายการ</td></tr>';
+  }
+  paged.forEach(function(item, idx) {
+    var sClass = getStockClass(item.current_stock, item.min_stock);
+    var sLabel = getStockLabel(item.current_stock, item.min_stock);
+    var imgUrlSrc = imgUrl(item.image_file_id);
+    var imgHtml = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-10 h-10 object-cover rounded-lg border border-gray-200" loading="lazy">' : '<div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400"><i class="fi fi-rr-box-open-full text-sm"></i></div>';
+    html += '<tr>';
+    html += '<td class="px-4 py-3 text-gray-400 text-xs">' + ((_itemsPage -1) * ITEMS_PER_PAGE + idx + 1) + '</td>';
+    html += '<td class="px-4 py-3">' + imgHtml + '</td>';
+    html += '<td class="px-4 py-3 font-mono text-xs text-navy-700">' + escHtml(item.item_code) + '</td>';
+    html += '<td class="px-4 py-3 font-medium text-gray-800">' + escHtml(item.name) + '</td>';
+    html += '<td class="px-4 py-3 text-gray-500 text-xs">' + escHtml(item.size || '-') + '</td>';
+    html += '<td class="px-4 py-3 text-gray-600 text-xs">' + escHtml(item.unit) + '</td>';
+    html += '<td class="px-4 py-3 text-xs text-gray-500">' + escHtml(item.category || '-') + '</td>';
+    html += '<td class="px-4 py-3 text-center font-bold text-gray-800">' + item.current_stock + '</td>';
+    html += '<td class="px-4 py-3 text-center text-gray-500 text-xs">' + item.min_stock + '</td>';
+    html += '<td class="px-4 py-3 text-center"><span class="px-2 py-1 rounded-full text-xs font-medium ' + sClass + '">' + sLabel + '</span></td>';
+    html += '<td class="px-4 py-3 text-center"><div class="flex items-center justify-center gap-1">';
+    html += '<button title="ดูรายละเอียด" onclick="showItemDetailModal(\'' + item.id + '\')" class="w-7 h-7 bg-gray-100 text-gray-600 rounded-lg flex items-center justify-center hover:bg-gray-200"><i class="fi fi-rr-eye text-xs"></i></button>';
+    html += '<button title="QR Code" onclick="showQRModal(\'' + item.id + '\')" class="w-7 h-7 bg-teal-100 text-teal-700 rounded-lg flex items-center justify-center hover:bg-teal-200"><i class="fi fi-rr-qr-scan text-xs"></i></button>';
+    html += '<button title="แก้ไข" onclick="openEditItemModal(\'' + item.id + '\')" class="w-7 h-7 bg-blue-100 text-blue-700 rounded-lg flex items-center justify-center hover:bg-blue-200"><i class="fi fi-rr-edit text-xs"></i></button>';
+    html += '<button title="ลบ" onclick="deleteItemConfirm(\'' + item.id + '\',\'' + escHtml(item.name) + '\')" class="w-7 h-7 bg-red-100 text-red-700 rounded-lg flex items-center justify-center hover:bg-red-200"><i class="fi fi-rr-trash text-xs"></i></button>';
+    html += '</div></td></tr>';
+  });
+  html += '</tbody></table></div>';
+
+  html += '<div class="md:hidden grid grid-cols-1 sm:grid-cols-2 gap-4">';
+  if (paged.length === 0) html += '<p class="col-span-full text-center text-sm text-gray-400 py-8">ไม่พบรายการ</p>';
+  paged.forEach(function(item) {
+    var sClass = getStockClass(item.current_stock, item.min_stock);
+    var sLabel = getStockLabel(item.current_stock, item.min_stock);
+    var imgUrlSrc = imgUrl(item.image_file_id);
+    var imgHtml = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-14 h-14 object-cover rounded-xl border border-gray-200" loading="lazy">' : '<div class="w-14 h-14 bg-gray-100 rounded-xl flex items-center justify-center"><i class="fi fi-rr-box-open-full text-gray-400 text-xl"></i></div>';
+    html += '<div class="card p-4 flex flex-col gap-3">';
+    html += '<div class="flex items-start justify-between">';
+    html += '<div>' + imgHtml + '</div>';
+    html += '<span class="px-2 py-0.5 rounded-full text-xs font-medium ' + sClass + '">' + sLabel + '</span></div>';
+    html += '<div><p class="font-semibold text-gray-800 text-sm leading-snug">' + escHtml(item.name) + '</p>';
+    html += '<p class="text-xs text-gray-400 mt-0.5">' + escHtml(item.item_code) + ' • ' + escHtml(item.size || '') + '</p>';
+    html += '<p class="text-xs text-gray-500 mt-0.5">' + escHtml(item.category || '') + '</p></div>';
+    html += '<div class="flex justify-between text-xs text-gray-500"><span>คงเหลือ</span><span class="font-bold text-gray-800">' + item.current_stock + ' ' + escHtml(item.unit) + '</span></div>';
+    html += '<div class="flex gap-2 pt-1">';
+    html += '<button onclick="showItemDetailModal(\'' + item.id + '\')" class="flex-1 btn-secondary btn-sm text-xs"><i class="fi fi-rr-eye mr-1"></i>ดู</button>';
+    html += '<button onclick="showQRModal(\'' + item.id + '\')" class="flex-1 btn-success btn-sm text-xs" style="background:#e0f2f1;color:#00695c;border-color:#b2dfdb"><i class="fi fi-rr-qr-scan mr-1"></i>QR</button>';
+    html += '<button onclick="openEditItemModal(\'' + item.id + '\')" class="flex-1 btn-primary btn-sm text-xs"><i class="fi fi-rr-edit mr-1"></i>แก้ไข</button>';
+    html += '</div></div>';
+  });
+  html += '</div></div>';
+
+  html += '<div id="itemsPagination"></div>';
+  html += '</div>';
+  
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
+  renderPagination('itemsPagination', filtered.length, _itemsPage, function(p) { _itemsPage = p; buildItemsPage(); });
 }
 
-/** addUser — เพิ่มผู้ใช้ใหม่ */
-function addUser(token, userData) {
-  try {
-    var session = validateSession(token);
-    if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์' };
-    var existing = getSheetData('Users');
-    for (var i = 0; i < existing.length; i++) {
-      if (existing[i].username === userData.username) return { success: false, message: 'Username นี้มีในระบบแล้ว' };
-    }
-    saveToSheet('Users', {
-      id: Utilities.getUuid(),
-      username: userData.username,
-      password: hashPassword(userData.password),
-      role: userData.role,
-      name: userData.name,
-      email: userData.email || '',
-      phone: userData.phone || '',
-      avatar: '',
-      telegram_chat_id: '',
-      active: true,
-      last_login: ''
-    });
-    return { success: true, message: 'เพิ่มผู้ใช้สำเร็จ' };
-  } catch(err) { return { success: false, message: err.message }; }
+function filterItems(data, f) {
+  return data.filter(function(i) {
+    if (f.search && !i.name.toLowerCase().includes(f.search.toLowerCase()) && !(i.item_code || '').toLowerCase().includes(f.search.toLowerCase())) return false;
+    if (f.category !== 'all' && i.category !== f.category) return false;
+    if (f.stock === 'low' && i.current_stock > i.min_stock) return false;
+    if (f.stock === 'ok'  && i.current_stock <= i.min_stock) return false;
+    return true;
+  });
+}
+function getCategoryList(data) {
+  var cats = {};
+  data.forEach(function(i) { if (i.category) cats[i.category] = 1; });
+  return Object.keys(cats).sort();
+}
+function paginate(data, page) {
+  return data.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
 }
 
-/** updateUser — แก้ไขข้อมูลผู้ใช้ */
-function updateUser(token, userId, userData) {
-  try {
-    var session = validateSession(token);
-    if (!session || (session.role !== 'admin' && session.user_id !== userId)) {
-      return { success: false, message: 'ไม่มีสิทธิ์' };
-    }
-    var update = { name: userData.name, email: userData.email, phone: userData.phone };
-    if (session.role === 'admin') { update.role = userData.role; update.active = userData.active; }
-    if (userData.avatar) update.avatar = userData.avatar;
-    updateInSheet('Users', userId, update);
-    return { success: true, message: 'แก้ไขข้อมูลเรียบร้อย' };
-  } catch(err) { return { success: false, message: err.message }; }
+var _filterTimer;
+function debounceItemFilter() { clearTimeout(_filterTimer); _filterTimer = setTimeout(applyItemFilter, 400); }
+function applyItemFilter() {
+  var searchEl = document.getElementById('itemSearch');
+  var catEl = document.getElementById('itemCatFilter');
+  var stockEl = document.getElementById('itemStockFilter');
+  
+  _itemsFilter.search   = searchEl ? searchEl.value : '';
+  _itemsFilter.category = catEl ? catEl.value : 'all';
+  _itemsFilter.stock    = stockEl ? stockEl.value : 'all';
+  _itemsPage = 1;
+  buildItemsPage();
 }
 
-/** changePassword — เปลี่ยนรหัสผ่าน */
-function changePassword(token, oldPass, newPass) {
-  try {
-    var session = validateSession(token);
-    if (!session) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-    var users = getSheetData('Users');
-    var user = null;
-    for (var i = 0; i < users.length; i++) {
-      if (users[i].id === session.user_id) { user = users[i]; break; }
-    }
-    if (!user || !verifyPassword(oldPass, user.password)) {
-      return { success: false, message: 'รหัสผ่านเดิมไม่ถูกต้อง' };
-    }
-    updateInSheet('Users', user.id, { password: hashPassword(newPass) });
-    return { success: true, message: 'เปลี่ยนรหัสผ่านเรียบร้อย' };
-  } catch(err) { return { success: false, message: err.message }; }
+function downloadCSVSample() {
+  var csv = 'รหัส,ชื่อวัสดุ,ขนาด,หน่วย,หมวดหมู่,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด\n';
+  csv += 'SUP-001,ถุงมือยาง (ไม่มีแป้ง) สีฟ้า,size S,กล่อง,อุปกรณ์ป้องกัน,20,5,ถุงมือยางไม่มีแป้งสำหรับงานทั่วไป\n';
+  csv += 'SUP-002,ถุงมือยาง (ไม่มีแป้ง) สีฟ้า,size M,กล่อง,อุปกรณ์ป้องกัน,15,5,ถุงมือยางไม่มีแป้งสำหรับงานทั่วไป\n';
+  csv += 'SUP-003,สำลี,200 g.,ถุง,วัสถุดิบทางการแพทย์,50,10,สำลีสะอาดบริสุทธิ์ 200 กรัม\n';
+  var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  var link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'ตัวอย่าง_รายการวัสดุ.csv';
+  link.click();
 }
 
-/** resetUserPassword — Admin reset password ผู้ใช้ */
-function resetUserPassword(token, userId) {
-  try {
-    var session = validateSession(token);
-    if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์' };
-    var users = getSheetData('Users');
-    var user = null;
-    for (var i = 0; i < users.length; i++) {
-      if (users[i].id === userId) { user = users[i]; break; }
-    }
-    if (!user) return { success: false, message: 'ไม่พบผู้ใช้' };
-    var tmpPass = Math.random().toString(36).slice(-8).toUpperCase();
-    updateInSheet('Users', userId, { password: hashPassword(tmpPass) });
-    if (user.email) {
-      var cfg = getConfig();
-      MailApp.sendEmail({ to: user.email, subject: 'Reset รหัสผ่าน — ' + cfg.app_name,
-        htmlBody: '<p>รหัสผ่านชั่วคราว: <b>' + tmpPass + '</b></p><p>กรุณาเปลี่ยนรหัสผ่านหลัง Login</p>' });
-    }
-    return { success: true, message: 'Reset password เรียบร้อย' + (user.email ? ' ส่งทางอีเมลแล้ว' : ': ' + tmpPass) };
-  } catch(err) { return { success: false, message: err.message }; }
+var _csvImportRows = [];
+function openImportCSVModal() {
+  _csvImportRows = [];
+  var body = '<div class="space-y-4">';
+  body += '<p class="text-sm text-gray-600">อัปโหลดไฟล์ CSV ตามรูปแบบตัวอย่าง ระบบจะแสดงตัวอย่างข้อมูลก่อนนำเข้า</p>';
+  body += '<input type="file" id="csvImportFile" accept=".csv" onchange="previewCSVImport()" class="form-input py-1.5">';
+  body += '<div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">';
+  body += '<p class="font-semibold mb-1">หมายเหตุ</p>';
+  body += '<ul class="list-disc list-inside space-y-0.5">';
+  body += '<li>รองรับไฟล์ .csv เท่านั้น (UTF-8)</li>';
+  body += '<li>คอลัมน์: รหัส,ชื่อวัสดุ,ขนาด,หน่วย,หมวดหมู่,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด</li>';
+  body += '<li>หากไม่มีรหัส ระบบจะสร้างรหัสอัตโนมัติ</li>';
+  body += '</ul></div>';
+  body += '<div id="csvImportPreview"></div>';
+  body += '</div>';
+  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
+    + '<button onclick="handleCSVImport()" class="btn-success"><i class="fi fi-rr-upload mr-1"></i>นำเข้า</button>';
+  openModal('นำเข้ารายการวัสดุจาก CSV', body, footer);
 }
 
-/** toggleUserActive — เปิด/ปิดบัญชีผู้ใช้ */
-function toggleUserActive(token, userId) {
-  try {
-    var session = validateSession(token);
-    if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์' };
-    var users = getSheetData('Users');
-    var user = null;
-    for (var i = 0; i < users.length; i++) {
-      if (users[i].id === userId) { user = users[i]; break; }
-    }
-    if (!user) return { success: false, message: 'ไม่พบผู้ใช้' };
-    updateInSheet('Users', userId, { active: !user.active });
-    return { success: true, message: (!user.active ? 'เปิด' : 'ระงับ') + 'บัญชีเรียบร้อย' };
-  } catch(err) { return { success: false, message: err.message }; }
+function previewCSVImport() {
+  var input = document.getElementById('csvImportFile');
+  var previewDiv = document.getElementById('csvImportPreview');
+  if (!input || !input.files[0] || !previewDiv) { if (previewDiv) previewDiv.innerHTML = ''; return; }
+  var file = input.files[0];
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    _csvImportRows = parseCSV(e.target.result);
+    if (_csvImportRows.length === 0) { previewDiv.innerHTML = '<p class="text-sm text-red-500">ไม่พบข้อมูลในไฟล์</p>'; return; }
+    var html = '<p class="text-sm font-medium text-gray-700 mb-2">ตัวอย่างข้อมูล (' + _csvImportRows.length + ' รายการ)</p>';
+    html += '<div class="max-h-64 overflow-y-auto border border-gray-200 rounded-xl">';
+    html += '<table class="w-full text-xs"><thead class="bg-gray-50 text-gray-600 sticky top-0">';
+    html += '<tr><th class="px-2 py-1.5 text-left">รหัส</th><th class="px-2 py-1.5 text-left">ชื่อ</th><th class="px-2 py-1.5 text-left">หน่วย</th><th class="px-2 py-1.5 text-center">สต็อก</th><th class="px-2 py-1.5 text-center">ขั้นต่ำ</th></tr></thead><tbody class="divide-y divide-gray-100">';
+    _csvImportRows.forEach(function(row) {
+      html += '<tr><td class="px-2 py-1.5">' + escHtml(row['รหัส'] || '-') + '</td>';
+      html += '<td class="px-2 py-1.5">' + escHtml(row['ชื่อวัสดุ'] || '') + '</td>';
+      html += '<td class="px-2 py-1.5">' + escHtml(row['หน่วย'] || '') + '</td>';
+      html += '<td class="px-2 py-1.5 text-center">' + escHtml(row['สต็อกเริ่มต้น'] || '0') + '</td>';
+      html += '<td class="px-2 py-1.5 text-center">' + escHtml(row['สต็อกขั้นต่ำ'] || '5') + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    previewDiv.innerHTML = html;
+  };
+  reader.readAsText(file, 'UTF-8');
 }
 
-// ============================================================
-// CONFIG & SETTINGS
-// ============================================================
-
-/** saveConfig — บันทึกการตั้งค่าระบบ */
-function saveConfig(token, configData) {
-  try {
-    var session = validateSession(token);
-    if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์' };
-    var configs = getSheetData('Config');
-    if (configs.length > 0) {
-      updateInSheet('Config', configs[0].id, configData);
-    } else {
-      saveToSheet('Config', configData);
-    }
-    return { success: true, message: 'บันทึกการตั้งค่าเรียบร้อย' };
-  } catch(err) { return { success: false, message: err.message }; }
+function parseCSV(text) {
+  var lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(function(l) { return l.trim() !== ''; });
+  if (lines.length < 2) return [];
+  var headers = lines[0].split(',').map(function(h) { return h.trim(); });
+  var rows = [];
+  for (var i = 1; i < lines.length; i++) {
+    var cols = lines[i].split(',');
+    if (cols.length < 2) continue;
+    var row = {};
+    headers.forEach(function(h, idx) { row[h] = (cols[idx] || '').trim(); });
+    rows.push(row);
+  }
+  return rows;
 }
 
-// ============================================================
-// REPORTS + EXPORT
-// ============================================================
-
-/** getMonthlyReport — รายงานสรุปรายเดือน */
-function getMonthlyReport(token, year, month) {
-  try {
-    var session = validateSession(token);
-    if (!session || session.role === 'employee') return { success: false, message: 'ไม่มีสิทธิ์' };
-    var dateStr = year + '-' + String(month).padStart(2, '0');
-    var items = getSheetData('Items').filter(function(i){ return i.active !== false; });
-    var txs   = getSheetData('Transactions');
-
-    var rows = items.map(function(item) {
-      var daily = {};
-      for (var d = 1; d <= 31; d++) daily[d] = 0;
-      txs.forEach(function(t) {
-        if (t.type === 'withdraw' && t.item_id === item.id && (t.date||'').startsWith(dateStr)) {
-          var day = parseInt(t.date.split('-')[2]);
-          if (day) daily[day] += t.quantity || 0;
-        }
-      });
-      var totalWithdraw = Object.values(daily).reduce(function(a,b){ return a+b; }, 0);
-      var received = txs.filter(function(t){
-        return t.type === 'receive' && t.item_id === item.id && (t.date||'').startsWith(dateStr);
-      }).reduce(function(s,t){ return s + (t.quantity||0); }, 0);
-      return {
-        item_code: item.item_code, name: item.name, size: item.size, unit: item.unit,
-        current_stock: item.current_stock, received: received,
-        daily: daily, total_withdraw: totalWithdraw
-      };
-    });
-    return { success: true, data: rows, month: dateStr };
-  } catch(err) { return { success: false, message: err.message }; }
+function handleCSVImport() {
+  var rows = _csvImportRows;
+  if (!rows || rows.length === 0) { showError('กรุณาเลือกไฟล์ CSV ก่อน'); return; }
+  showConfirm('ยืนยันนำเข้า', 'พบ ' + rows.length + ' รายการ ยืนยันนำเข้า?', function() {
+    showLoading('กำลังนำเข้า ' + rows.length + ' รายการ...');
+    var promises = rows.map(function(row) {
+      var itemCode = row['รหัส'] || '';
+      var name = row['ชื่อวัสดุ'] || '';
+      if (!name) return Promise.resolve({ success: false, message: 'ขาดชื่อวัสดุ' });
+      var data = {
+        item_code: itemCode,
+        name: name,
+        size: row['ขนาด'] || '',
+        unit: row['หน่วย'] || 'ชิ้น',
+        category: row['หมวดหมู่'] || '',
+        current_stock: parseInt(row['สต็อกเริ่มต้น'] || 0),
+        min_stock: parseInt(row['สต็อกขั้นต่ำ'] || 5),
+        description: row['รายละเอียด'] || ''
+      };
+      return callAPI('addItem', AUTH.token, data);
+    });
+    Promise.all(promises).then(function(results) {
+      hideLoading(); closeModal();
+      var ok = results.filter(function(r) { return r && r.success; }).length;
+      var fail = results.length - ok;
+      if (fail > 0) showError('นำเข้าสำเร็จ ' + ok + ' รายการ ล้มเหลว ' + fail + ' รายการ');
+      else showSuccess('นำเข้าสำเร็จ ' + ok + ' รายการ');
+      _itemsCacheTime = 0;
+      renderItems();
+    }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+  });
 }
 
-/** generateExportUrl — สร้าง Spreadsheet ชั่วคราวสำหรับ Export */
-function generateExportUrl(token, reportType, filters) {
-  try {
-    var session = validateSession(token);
-    if (!session || session.role === 'employee') return { success: false, message: 'ไม่มีสิทธิ์' };
-
-    var ss = SpreadsheetApp.create('Export_' + reportType + '_' + new Date().getTime());
-    var sheet = ss.getActiveSheet();
-
-    if (reportType === 'receives') {
-      sheet.setName('รายงานรับเข้า');
-      sheet.appendRow(['เลขที่รับ','วันที่','รหัสวัสดุ','ชื่อวัสดุ','จำนวน','หน่วย','ผู้รับ','หมายเหตุ']);
-      var recvs = getSheetData('Receives');
-      if (filters && filters.date_from) recvs = recvs.filter(function(r){ return r.date >= filters.date_from; });
-      if (filters && filters.date_to)   recvs = recvs.filter(function(r){ return r.date <= filters.date_to; });
-      recvs.forEach(function(r){
-        sheet.appendRow([r.receive_no, r.date, r.item_code, r.item_name, r.quantity, r.unit, r.received_by_name, r.note||'']);
-      });
-    } else if (reportType === 'withdrawals') {
-      sheet.setName('รายงานเบิกออก');
-      sheet.appendRow(['เลขที่เบิก','วันที่','รหัสวัสดุ','ชื่อวัสดุ','ขอ','อนุมัติ','หน่วย','ผู้เบิก','วัตถุประสงค์','สถานะ']);
-      var wds = getSheetData('Withdrawals');
-      if (filters && filters.status && filters.status !== 'all') wds = wds.filter(function(w){ return w.status === filters.status; });
-      wds.forEach(function(w){
-        sheet.appendRow([w.withdraw_no, w.requested_at.split('T')[0], w.item_code, w.item_name,
-          w.quantity_requested, w.quantity_approved, w.unit, w.requested_by_name, w.purpose||'', w.status]);
-      });
-    }
-
-    var url = ss.getUrl();
-    DriveApp.getFileById(ss.getId()).setTrashed(false);
-    return { success: true, url: url };
-  } catch(err) {
-    logError('generateExportUrl', err);
-    return { success: false, message: err.message };
-  }
+function openAddItemModal() {
+  _itemImageFileId = null;
+  var body = itemFormHTML({});
+  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
+    + '<button onclick="submitAddItem()" class="btn-primary"><i class="fi fi-rr-plus mr-1"></i>เพิ่มวัสดุ</button>';
+  openModal('เพิ่มรายการวัสดุใหม่', body, footer);
+}
+function openEditItemModal(id) {
+  var item = _itemsData.find(function(i) { return i.id === id; });
+  if (!item) return;
+  _itemImageFileId = item.image_file_id || null;
+  var body = itemFormHTML(item);
+  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
+    + '<button onclick="submitEditItem(\'' + id + '\')" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึก</button>';
+  openModal('แก้ไขรายการวัสดุ', body, footer);
+}
+function itemFormHTML(item) {
+  var fid = _itemImageFileId || item.image_file_id || '';
+  var imgSection = '';
+  if (fid) {
+    var imgSrc = imgUrl(fid);
+    imgSection = '<div class="sm:col-span-2"><label class="form-label">รูปภาพวัสดุ</label><div class="flex items-center gap-3"><img id="itemImgPreview" src="' + (imgSrc || '') + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200"><button onclick="removeItemImage()" type="button" class="text-red-500 text-sm hover:underline">ลบรูป</button></div><input type="hidden" id="itemImageFileId" value="' + fid + '"></div>';
+  } else {
+    imgSection = '<div class="sm:col-span-2"><label class="form-label">รูปภาพวัสดุ</label><input type="file" id="itemImageFile" accept="image/*" onchange="handleItemImageUpload(this)" class="form-input py-1.5"><p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 5MB)</p><div id="itemImagePreview"></div></div>';
+  }
+  return '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'
+    + fieldHTML('ชื่อวัสดุ *', 'itemName', 'text', item.name || '', 'sm:col-span-2')
+    + fieldHTML('ขนาดบรรจุ', 'itemSize', 'text', item.size || '')
+    + fieldHTML('หน่วย *', 'itemUnit', 'text', item.unit || '')
+    + fieldHTML('หมวดหมู่', 'itemCategory', 'text', item.category || 'วัสดุทำความสะอาด')
+    + fieldHTML('สต็อกเริ่มต้น', 'itemStock', 'number', item.current_stock || 0)
+    + fieldHTML('สต็อกขั้นต่ำ', 'itemMinStock', 'number', item.min_stock || 5)
+    + imgSection
+    + '</div>';
+}
+function fieldHTML(label, id, type, value, extra) {
+  return '<div class="' + (extra || '') + '">'
+    + '<label class="form-label">' + escHtml(label) + '</label>'
+    + '<input type="' + type + '" id="' + id + '" value="' + escHtml(String(value)) + '" class="form-input"></div>';
 }
 
-// ============================================================
-// FILE UPLOAD (Google Drive)
-// ============================================================
-
-/** uploadFile — อัปโหลดไฟล์ไปยัง Google Drive */
-function uploadFile(token, base64Data, mimeType, filename) {
-  try {
-    var session = validateSession(token);
-    if (!session) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-    var cfg = getConfig();
-    var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), mimeType, filename);
-    var file;
-    if (cfg.folder_id) {
-      var folder = DriveApp.getFolderById(cfg.folder_id);
-      file = folder.createFile(blob);
-    } else {
-      file = DriveApp.createFile(blob);
-    }
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    var fileId = file.getId();
-    return { success: true, file_id: fileId, url: 'https://lh5.googleusercontent.com/d/' + fileId };
-  } catch(err) {
-    logError('uploadFile', err);
-    return { success: false, message: err.message };
-  }
+function submitAddItem() {
+  var data = readItemForm();
+  if (!data) return;
+  showLoading('กำลังบันทึก...');
+  callAPI('addItem', AUTH.token, data).then(function(res) {
+    hideLoading(); closeModal();
+    if (res.success) { showSuccess(res.message); renderItems(); }
+    else showError(res.message);
+  }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+}
+function submitEditItem(id) {
+  var data = readItemForm();
+  if (!data) return;
+  showLoading('กำลังบันทึก...');
+  callAPI('updateItem', AUTH.token, id, data).then(function(res) {
+    hideLoading(); closeModal();
+    if (res.success) { showSuccess(res.message); renderItems(); }
+    else showError(res.message);
+  }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+}
+function readItemForm() {
+  var nameEl = document.getElementById('itemName');
+  var unitEl = document.getElementById('itemUnit');
+  var sizeEl = document.getElementById('itemSize');
+  var catEl = document.getElementById('itemCategory');
+  var stockEl = document.getElementById('itemStock');
+  var minEl = document.getElementById('itemMinStock');
+  var imgIdEl = document.getElementById('itemImageFileId');
+  
+  var name = nameEl ? nameEl.value : '';
+  var unit = unitEl ? unitEl.value : '';
+  if (!name.trim()) { showError('กรุณากรอกชื่อวัสดุ'); return null; }
+  if (!unit.trim()) { showError('กรุณากรอกหน่วย'); return null; }
+  
+  return {
+    name: name, size: sizeEl ? sizeEl.value : '',
+    unit: unit, category: catEl ? catEl.value : '',
+    current_stock: stockEl ? parseInt(stockEl.value) || 0 : 0,
+    min_stock: minEl ? parseInt(minEl.value) || 5 : 5,
+    image_file_id: imgIdEl ? imgIdEl.value : _itemImageFileId || ''
+  };
+}
+function handleItemImageUpload(input) {
+  var file = input.files[0];
+  if (!file) return;
+  if (!file.type.match('image.*')) { showError('กรุณาเลือกไฟล์รูปภาพ'); input.value = ''; return; }
+  if (file.size > 5 * 1024 * 1024) { showError('ไฟล์ใหญ่เกิน 5MB'); input.value = ''; return; }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var base64 = e.target.result.split(',')[1];
+    showLoading('กำลังอัปโหลดรูป...');
+    callAPI('uploadFile', AUTH.token, base64, file.type, file.name).then(function(res) {
+      hideLoading();
+      if (res.success) {
+        _itemImageFileId = res.file_id;
+        var preview = document.getElementById('itemImagePreview');
+        var imgSrc = imgUrl(res.file_id);
+        if (preview) preview.innerHTML = '<img src="' + (imgSrc || '') + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200 mt-2">';
+        showSuccess('อัปโหลดรูปเรียบร้อย');
+      } else {
+        showError(res.message || 'อัปโหลดไม่สำเร็จ');
+      }
+    }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
+  };
+  reader.readAsDataURL(file);
+}
+function removeItemImage() {
+  _itemImageFileId = null;
+  var name = document.getElementById('itemName') ? document.getElementById('itemName').value : '';
+  var size = document.getElementById('itemSize') ? document.getElementById('itemSize').value : '';
+  var unit = document.getElementById('itemUnit') ? document.getElementById('itemUnit').value : '';
+  var cat  = document.getElementById('itemCategory') ? document.getElementById('itemCategory').value : '';
+  var stock = document.getElementById('itemStock') ? document.getElementById('itemStock').value : 0;
+  var min   = document.getElementById('itemMinStock') ? document.getElementById('itemMinStock').value : 5;
+  var fakeItem = { name: name, size: size, unit: unit, category: cat, current_stock: stock, min_stock: min, image_file_id: '' };
+  var body = itemFormHTML(fakeItem);
+  var bodyEl = document.getElementById('modalBody');
+  if (bodyEl) bodyEl.innerHTML = body;
 }
 
-// ============================================================
-// TELEGRAM
-// ============================================================
-
-/** sendTelegram — ส่งข้อความแจ้งเตือนผ่าน Telegram Bot */
-function sendTelegram(message) {
-  try {
-    var cfg = getConfig();
-    if (!cfg.telegram_enabled || !cfg.telegram_bot_token || !cfg.telegram_chat_id) return;
-    var url = 'https://api.telegram.org/bot' + cfg.telegram_bot_token + '/sendMessage';
-    UrlFetchApp.fetch(url, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify({ chat_id: cfg.telegram_chat_id, text: message, parse_mode: 'HTML' }),
-      muteHttpExceptions: true
-    });
-  } catch(err) { console.error('Telegram error:', err); }
+function deleteItemConfirm(id, name) {
+  showConfirm('ลบรายการวัสดุ', 'ต้องการลบ "' + name + '" ใช่หรือไม่?', function() {
+    showLoading('กำลังลบ...');
+    callAPI('deleteItem', AUTH.token, id).then(function(res) {
+      hideLoading();
+      if (res.success) { showSuccess(res.message); renderItems(); }
+      else showError(res.message);
+    }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+  }, 'ลบ');
 }
 
-/** testTelegram — ทดสอบการส่ง Telegram */
-function testTelegram(token) {
-  try {
-    var session = validateSession(token);
-    if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์' };
-    sendTelegram('<b>ทดสอบการแจ้งเตือน</b>\nระบบวัสดุสิ้นเปลืองทำงานปกติ\nเวลา: ' + new Date().toLocaleString('th-TH'));
-    return { success: true, message: 'ส่งข้อความทดสอบแล้ว' };
-  } catch(err) { return { success: false, message: err.message }; }
+function showItemDetailModal(itemId) {
+  var item = _itemsData.find(function(i) { return i.id === itemId; });
+  if (!item) return;
+  var sClass = getStockClass(item.current_stock, item.min_stock);
+  var sLabel = getStockLabel(item.current_stock, item.min_stock);
+  var pct = item.min_stock > 0 ? Math.min(100, Math.round(item.current_stock / (item.min_stock * 3) * 100)) : 50;
+  var barColor = item.current_stock <= 0 ? 'bg-red-500' : item.current_stock <= item.min_stock ? 'bg-amber-400' : 'bg-green-500';
+
+  var imgUrlSrc = imgUrl(item.image_file_id);
+  var imgSection = '';
+  if (imgUrlSrc) {
+    imgSection = '<div class="flex justify-center mb-4"><img src="' + imgUrlSrc + '" class="w-40 h-40 object-cover rounded-2xl border border-gray-200 shadow-sm" loading="lazy"></div>';
+  } else {
+    imgSection = '<div class="flex justify-center mb-4"><div class="w-24 h-24 bg-gray-100 rounded-2xl flex items-center justify-center"><i class="fi fi-rr-box-open-full text-gray-300 text-4xl"></i></div></div>';
+  }
+
+  var body = '<div class="text-center mb-5">'
+    + imgSection
+    + '<p class="font-mono text-xs text-navy-600 mb-1">' + escHtml(item.item_code) + '</p>'
+    + '<h2 class="text-lg font-bold text-gray-800">' + escHtml(item.name) + '</h2>'
+    + (item.size ? '<p class="text-sm text-gray-500 mt-1">' + escHtml(item.size) + '</p>' : '')
+    + '</div>';
+
+  body += '<div class="space-y-3">';
+  body += '<div class="grid grid-cols-2 gap-3">'
+    + '<div class="bg-gray-50 rounded-xl p-3 text-center"><p class="text-xs text-gray-400 mb-1">หมวดหมู่</p><p class="text-sm font-semibold text-gray-700">' + escHtml(item.category || '-') + '</p></div>'
+    + '<div class="bg-gray-50 rounded-xl p-3 text-center"><p class="text-xs text-gray-400 mb-1">หน่วย</p><p class="text-sm font-semibold text-gray-700">' + escHtml(item.unit) + '</p></div>'
+    + '</div>';
+
+  body += '<div class="bg-white border border-gray-200 rounded-xl p-4">'
+    + '<div class="flex items-center justify-between mb-2">'
+    + '<span class="text-sm text-gray-500">คงเหลือในระบบ</span>'
+    + '<span class="text-xl font-bold text-gray-800">' + item.current_stock + ' <span class="text-sm font-normal text-gray-500">' + item.unit + '</span></span>'
+    + '</div>'
+    + '<div class="progress-bar mb-2"><div class="progress-fill ' + barColor + '" style="width:' + pct + '%"></div></div>'
+    + '<div class="flex items-center justify-between">'
+    + '<span class="text-xs text-gray-400">ขั้นต่ำ: ' + item.min_stock + ' ' + item.unit + '</span>'
+    + '<span class="px-2 py-0.5 rounded-full text-xs font-medium ' + sClass + '">' + sLabel + '</span>'
+    + '</div></div>';
+
+  if (item.description) {
+    body += '<div class="bg-gray-50 rounded-xl p-3"><p class="text-xs text-gray-400 mb-1">หมายเหตุ / รายละเอียด</p><p class="text-sm text-gray-700">' + escHtml(item.description) + '</p></div>';
+  }
+
+  if (item.created_at || item.updated_at) {
+    body += '<div class="text-xs text-gray-400 text-center pt-1">'
+      + (item.created_at ? '<span>เพิ่มเมื่อ: ' + formatDate(item.created_at) + '</span>' : '')
+      + (item.updated_at ? ' <span class="mx-1">|</span> <span>อัปเดตล่าสุด: ' + formatDate(item.updated_at) + '</span>' : '')
+      + '</div>';
+  }
+  body += '</div>';
+
+  var footer = '<button onclick="closeModal()" class="btn-secondary">ปิด</button>'
+    + '<button onclick="openWithdrawModal(\'' + item.id + '\')" class="btn-primary"><i class="fi fi-rr-inbox-out mr-1"></i>เบิกวัสดุ</button>';
+  openModal('รายละเอียดวัสดุ', body, footer);
 }
 
-// ============================================================
-// HELPER FUNCTIONS
-// ============================================================
-
-/** getSheetData — อ่านข้อมูลทั้งหมดจาก Sheet */
-function getSheetData(sheetName) {
-  try {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
-    if (!sheet || sheet.getLastRow() < 2) return [];
-    return sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues()
-      .filter(function(r){ return r[0] && r[0] !== ''; })
-      .map(function(r){ try { return JSON.parse(r[0]); } catch(e){ return null; } })
-      .filter(function(i){ return i !== null; });
-  } catch(err) { logError('getSheetData:' + sheetName, err); return []; }
+// ===== QR CODE =====
+function showQRModal(itemId) {
+  var item = _itemsData.find(function(i) { return i.id === itemId; });
+  if (!item) return;
+  var baseUrl = window.location.origin + window.location.pathname;
+  var qrUrl  = baseUrl + '?action=withdraw&item_id=' + itemId;
+  var body = '<div class="text-center">'
+    + '<p class="font-semibold text-gray-700 mb-1">' + escHtml(item.name) + '</p>'
+    + '<p class="text-xs text-gray-500 mb-4">' + escHtml(item.item_code) + ' • ' + escHtml(item.size || '') + ' • ' + item.unit + '</p>'
+    + '<div id="qrCanvas" class="flex justify-center mb-4"></div>'
+    + '<p class="text-xs text-gray-400 break-all border rounded-lg px-3 py-2 bg-gray-50">' + escHtml(qrUrl) + '</p>'
+    + '<p class="text-xs text-gray-400 mt-3">พนักงานสแกน QR นี้ด้วยกล้องมือถือเพื่อเบิกวัสดุ</p></div>';
+  var footer = '<button onclick="closeModal()" class="btn-secondary">ปิด</button>'
+    + '<button onclick="printQRLabel(\'' + escHtml(JSON.stringify(item).replace(/'/g, '&#39;')) + '\')" class="btn-primary"><i class="fi fi-rr-print mr-1"></i>พิมพ์</button>';
+  openModal('QR Code — ' + item.name, body, footer);
+  setTimeout(function() {
+    var canvasContainer = document.getElementById('qrCanvas');
+    if (canvasContainer) {
+      new QRCode(canvasContainer, {
+        text: qrUrl, width: 180, height: 180,
+        colorDark: '#1a2566', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M
+      });
+    }
+  }, 100);
 }
 
-/** saveToSheet — เพิ่มข้อมูลใหม่ */
-function saveToSheet(sheetName, data) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
-  if (!data.id) data.id = Utilities.getUuid();
-  if (!data.created_at) data.created_at = new Date().toISOString();
-  data.updated_at = new Date().toISOString();
-  sheet.appendRow([JSON.stringify(data)]);
-  return data;
+function printQRLabel(itemJson) {
+  var item = JSON.parse(itemJson);
+  var baseUrl = window.location.origin + window.location.pathname;
+  var qrUrl  = baseUrl + '?action=withdraw&item_id=' + item.id;
+  var win = window.open('', '_blank');
+  var css = 'body{font-family:sarabun,sans-serif;margin:0;padding:0;background:#fff}' +
+    '.label{width:58mm;height:40mm;border:1.5px dashed #ccc;padding:3mm;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;margin:4mm auto}' +
+    '.name{font-size:11px;font-weight:700;color:#1a2566;margin:0 0 1mm;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    '.meta{font-size:8px;color:#666;margin:0 0 1mm}' +
+    '.qr-wrap{width:22mm;height:22mm;margin:0 auto}' +
+    '@media print{.label{border-style:solid!important;border-color:#333!important;page-break-inside:avoid;margin:2mm}}';
+  win.document.write('<html><head><title>ป้าย ' + item.name + '</title><link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">'
+    + '<style>' + css + '</style></head><body>'
+    + '<div class="label">'
+    + '<p class="name">' + escHtml(item.name) + '</p>'
+    + '<p class="meta">' + escHtml(item.item_code) + (item.size ? ' • ' + escHtml(item.size) : '') + '</p>'
+    + '<div class="qr-wrap" id="qr"></div>'
+    + '</div>'
+    + '<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>'
+    + '<script>new QRCode(document.getElementById("qr"),{text:"' + qrUrl + '",width:80,height:80,colorDark:"#1a2566",correctLevel:QRCode.CorrectLevel.M});'
+    + 'setTimeout(function(){window.print();window.close();},700);<\/script>'
+    + '</body></html>');
+  win.document.close();
 }
 
-/** updateInSheet — อัพเดตข้อมูลตาม id */
-function updateInSheet(sheetName, id, updates) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
-  var rows = sheet.getRange(2, 1, Math.max(sheet.getLastRow() - 1, 1), 1).getValues();
-  for (var i = 0; i < rows.length; i++) {
-    try {
-      var obj = JSON.parse(rows[i][0]);
-      if (obj.id === id) {
-        Object.keys(updates).forEach(function(k){ obj[k] = updates[k]; });
-        obj.updated_at = new Date().toISOString();
-        sheet.getRange(i + 2, 1).setValue(JSON.stringify(obj));
-        return obj;
-      }
-    } catch(e){}
-  }
-  return null;
+// ===== STOCK =====
+var _stockData = [];
+var _stockView = 'card';
+
+function updateLowStockBadge(items) {
+  var lowBadge = document.getElementById('lowStockBadge');
+  if (!lowBadge) return;
+  var count = (items || []).filter(function(i) { return i.active !== false && i.current_stock <= i.min_stock; }).length;
+  if (count > 0) { lowBadge.textContent = count; lowBadge.classList.remove('hidden'); }
+  else { lowBadge.classList.add('hidden'); }
 }
 
-/** deleteFromSheet — ลบแถว (hard delete) */
-function deleteFromSheet(sheetName, id, hard) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
-  var rows = sheet.getRange(2, 1, Math.max(sheet.getLastRow() - 1, 1), 1).getValues();
-  for (var i = rows.length - 1; i >= 0; i--) {
-    try {
-      var obj = JSON.parse(rows[i][0]);
-      if (obj.id === id) {
-        if (hard) { sheet.deleteRow(i + 2); }
-        else { obj.active = false; obj.updated_at = new Date().toISOString(); sheet.getRange(i + 2, 1).setValue(JSON.stringify(obj)); }
-        return true;
-      }
-    } catch(e){}
-  }
-  return false;
+function renderStock() {
+  showLoading('โหลดสต็อก...');
+  if (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL) {
+    hideLoading();
+    _stockData = _itemsData;
+    updateLowStockBadge(_itemsData);
+    buildStockPage();
+    return;
+  }
+  callAPI('getItems', AUTH.token).then(function(res) {
+    hideLoading();
+    if (!res.success) { showError(res.message); return; }
+    _itemsData = res.data;
+    _itemsCacheTime = Date.now();
+    _stockData = res.data;
+    updateLowStockBadge(_itemsData);
+    buildStockPage();
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
-/** getConfig — อ่าน Config */
-function getConfig() {
-  var c = getSheetData('Config');
-  return c.length > 0 ? c[0] : { app_name: CONFIG.APP_NAME };
+function buildStockPage() {
+  var html = '<div class="fade-in space-y-4">';
+  html += '<div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">';
+  html += '<div class="flex gap-2 flex-wrap">';
+  html += '<div class="relative"><i class="fi fi-rr-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>'
+    + '<input type="text" id="stockSearch" placeholder="ค้นหา..." onkeyup="filterStock()" class="pl-9 pr-4 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-500 w-44"></div>';
+  html += '<select id="stockCatFilter" onchange="filterStock()" class="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none">';
+  html += '<option value="">ทุกหมวด</option>';
+  getCategoryList(_stockData).forEach(function(c) { html += '<option>' + escHtml(c) + '</option>'; });
+  html += '</select></div>';
+  html += '<div class="flex gap-2">';
+  html += '<button onclick="setStockView(\'card\')" id="btnCardView" class="px-3 py-2 border rounded-xl text-sm ' + (_stockView === 'card' ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50') + '"><i class="fi fi-rr-grid"></i></button>';
+  html += '<button onclick="setStockView(\'table\')" id="btnTableView" class="px-3 py-2 border rounded-xl text-sm ' + (_stockView === 'table' ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50') + '"><i class="fi fi-rr-list"></i></button>';
+  html += '</div></div>';
+
+  html += '<div id="stockContent">' + buildStockContent(_stockData) + '</div>';
+  html += '</div>';
+  
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
 }
 
-/** generateRunningNumber — สร้างเลขที่อัตโนมัติ */
-function generateRunningNumber(prefix, sheetName) {
-  var count = getSheetData(sheetName).length + 1;
-  var thaiYear = new Date().getFullYear() + 543;
-  return prefix + '-' + thaiYear + '-' + String(count).padStart(4, '0');
+function buildStockContent(data) {
+  if (_stockView === 'card') {
+    var html = '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">';
+    if (data.length === 0) html += '<p class="col-span-4 text-center text-gray-400 py-10">ไม่พบรายการ</p>';
+    data.forEach(function(item) {
+      var sClass = getStockClass(item.current_stock, item.min_stock);
+      var sLabel = getStockLabel(item.current_stock, item.min_stock);
+      var pct = item.min_stock > 0 ? Math.min(100, Math.round(item.current_stock / (item.min_stock * 3) * 100)) : 50;
+      var barColor = item.current_stock <= 0 ? 'bg-red-500' : item.current_stock <= item.min_stock ? 'bg-amber-400' : 'bg-green-500';
+      html += '<div class="card p-4 flex flex-col gap-3 hover:shadow-md transition-shadow">';
+      html += '<div class="flex items-start justify-between">';
+      var imgUrlSrc = imgUrl(item.image_file_id);
+      var cardImg = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-10 h-10 object-cover rounded-xl border border-gray-200" loading="lazy">' : '<div class="w-10 h-10 bg-navy-100 rounded-xl flex items-center justify-center"><i class="fi fi-rr-box-open-full text-navy-700 text-lg"></i></div>';
+      html += '<div>' + cardImg + '</div>';
+      html += '<span class="px-2 py-0.5 rounded-full text-xs font-medium ' + sClass + '">' + sLabel + '</span></div>';
+      html += '<div><p class="font-semibold text-gray-800 text-sm leading-snug">' + escHtml(item.name) + '</p>';
+      html += '<p class="text-xs text-gray-400 mt-0.5">' + escHtml(item.size || '') + ' • ' + escHtml(item.category || '') + '</p></div>';
+      html += '<div><div class="flex justify-between text-xs text-gray-500 mb-1"><span>คงเหลือ</span><span class="font-bold text-gray-800">' + item.current_stock + ' ' + item.unit + '</span></div>';
+      html += '<div class="progress-bar"><div class="progress-fill ' + barColor + '" style="width:' + pct + '%"></div></div>';
+      html += '<p class="text-xs text-gray-400 mt-1">ขั้นต่ำ: ' + item.min_stock + ' ' + item.unit + '</p></div>';
+      html += '<div class="flex gap-2 pt-1">';
+      html += '<button onclick="showItemDetailModal(\'' + item.id + '\')" class="flex-1 btn-secondary btn-sm text-xs" title="ดูรายละเอียด"><i class="fi fi-rr-eye mr-1"></i>ดู</button>';
+      if (AUTH.user.role !== 'employee') {
+        html += '<button onclick="openReceiveModal(\'' + item.id + '\')" class="flex-1 btn-success btn-sm text-xs"><i class="fi fi-rr-inbox-in mr-1"></i>รับเข้า</button>';
+      }
+      html += '<button onclick="openWithdrawModal(\'' + item.id + '\')" class="flex-1 btn-primary btn-sm text-xs"><i class="fi fi-rr-inbox-out mr-1"></i>เบิก</button>';
+      html += '</div></div>';
+    });
+    return html + '</div>';
+  } else {
+    var html = '<div class="card overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
+    html += '<tr><th class="px-4 py-3 text-left">รหัส</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">หน่วย</th>';
+    html += '<th class="px-4 py-3 text-center">สต็อก</th><th class="px-4 py-3 text-center">ขั้นต่ำ</th><th class="px-4 py-3 text-center">สถานะ</th><th class="px-4 py-3 text-center">การดำเนินการ</th></tr>';
+    html += '</thead><tbody class="divide-y divide-gray-100">';
+    if (data.length === 0) html += '<tr><td colspan="7" class="text-center py-8 text-gray-400">ไม่พบรายการ</td></tr>';
+    data.forEach(function(item) {
+      var sClass = getStockClass(item.current_stock, item.min_stock);
+      html += '<tr><td class="px-4 py-2.5 font-mono text-xs text-navy-700">' + escHtml(item.item_code) + '</td>';
+      html += '<td class="px-4 py-2.5 font-medium text-gray-700">' + escHtml(item.name) + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(item.unit) + '</td>';
+      html += '<td class="px-4 py-2.5 text-center font-bold">' + item.current_stock + '</td>';
+      html += '<td class="px-4 py-2.5 text-center text-gray-400">' + item.min_stock + '</td>';
+      html += '<td class="px-4 py-2.5 text-center"><span class="px-2 py-0.5 rounded-full text-xs ' + sClass + '">' + getStockLabel(item.current_stock, item.min_stock) + '</span></td>';
+      html += '<td class="px-4 py-2.5 text-center"><div class="flex gap-1 justify-center">';
+      html += '<button onclick="showItemDetailModal(\'' + item.id + '\')" class="btn-secondary btn-sm text-xs" title="ดูรายละเอียด"><i class="fi fi-rr-eye"></i></button>';
+      if (AUTH.user.role !== 'employee') html += '<button onclick="openReceiveModal(\'' + item.id + '\')" class="btn-success btn-sm text-xs"><i class="fi fi-rr-inbox-in mr-1"></i>รับเข้า</button>';
+      html += '<button onclick="openWithdrawModal(\'' + item.id + '\')" class="btn-primary btn-sm text-xs"><i class="fi fi-rr-inbox-out mr-1"></i>เบิก</button>';
+      html += '</div></td></tr>';
+    });
+    html += '</tbody></table></div></div>';
+    return html;
+  }
 }
 
-/** hashPassword — เข้ารหัส SHA-256 */
-function hashPassword(password) {
-  var bytes = Utilities.computeDigest(
-    Utilities.DigestAlgorithm.SHA_256,
-    password + CONFIG.SALT,
-    Utilities.Charset.UTF_8
-  );
-  return bytes.map(function(b){ return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
+function setStockView(view) {
+  _stockView = view;
+  buildStockPage();
+}
+function filterStock() {
+  var searchEl = document.getElementById('stockSearch');
+  var catEl = document.getElementById('stockCatFilter');
+  var q   = searchEl ? searchEl.value : '';
+  var cat = catEl ? catEl.value : '';
+  
+  var filtered = _stockData.filter(function(i) {
+    if (q && !i.name.toLowerCase().includes(q.toLowerCase()) && !(i.item_code || '').includes(q.toLowerCase())) return false;
+    if (cat && i.category !== cat) return false;
+    return true;
+  });
+  
+  var contentContainer = document.getElementById('stockContent');
+  if (contentContainer) contentContainer.innerHTML = buildStockContent(filtered);
 }
 
-/** verifyPassword — ตรวจสอบรหัสผ่าน */
-function verifyPassword(plain, hashed) {
-  return hashPassword(plain) === hashed;
+// ===== RECEIVE =====
+var _receiveData = [];
+var _receivePage = 1;
+
+function renderReceive() {
+  showLoading('โหลดข้อมูลรับเข้า...');
+  var itemsPromise = (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL)
+    ? Promise.resolve({ success: true, data: _itemsData })
+    : callAPI('getItems', AUTH.token).then(function(res) { _itemsData = res.data || []; _itemsCacheTime = Date.now(); return res; });
+  Promise.all([ itemsPromise, callAPI('getReceives', AUTH.token, {}) ]).then(function(results) {
+    hideLoading();
+    _itemsData   = results[0].data || [];
+    _receiveData = results[1].data || [];
+    _receivePage = 1;
+    buildReceivePage();
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
-/** logError — บันทึก error */
-function logError(fnName, err) {
-  try {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Errors');
-    if (!sheet) return;
-    var data = { id: Utilities.getUuid(), function_name: fnName,
-      error_message: err.message || String(err), stack_trace: err.stack || '',
-      created_at: new Date().toISOString() };
-    sheet.appendRow([JSON.stringify(data)]);
-    console.error('[' + fnName + ']', err);
-  } catch(e){}
+function buildReceivePage() {
+  var paged = paginate(_receiveData, _receivePage);
+  var html = '<div class="fade-in space-y-4">';
+  html += '<div class="flex items-center justify-between">';
+  html += '<h3 class="font-semibold text-gray-700">ประวัติรับวัสดุเข้าคลัง</h3>';
+  html += '<button onclick="openReceiveModal(null)" class="btn-primary flex items-center gap-2"><i class="fi fi-rr-plus"></i> บันทึกรับเข้า</button></div>';
+
+  html += '<div class="card overflow-hidden"><div class="overflow-x-auto">';
+  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
+  html += '<tr><th class="px-4 py-3 text-left">เลขที่รับ</th><th class="px-4 py-3 text-left">วันที่</th>';
+  html += '<th class="px-4 py-3 text-left">รายการ</th><th class="px-4 py-3 text-center">จำนวน</th>';
+  html += '<th class="px-4 py-3 text-left">ผู้รับ</th><th class="px-4 py-3 text-left">หมายเหตุ</th></tr></thead>';
+  html += '<tbody class="divide-y divide-gray-100">';
+  if (paged.length === 0) html += '<tr><td colspan="6" class="text-center py-10 text-gray-400">ยังไม่มีรายการรับเข้า</td></tr>';
+  rannedRows(paged);
+  
+  function rannedRows(rows) {
+    rows.forEach(function(r) {
+      html += '<tr><td class="px-4 py-2.5 font-mono text-xs text-navy-700">' + escHtml(r.receive_no) + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-600">' + formatDate(r.date) + '</td>';
+      html += '<td class="px-4 py-2.5 font-medium text-gray-700">' + escHtml(r.item_name || '-') + '</td>';
+      html += '<td class="px-4 py-2.5 text-center font-bold text-blue-700">+' + r.quantity + ' ' + escHtml(r.unit || '') + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(r.received_by_name || '-') + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-400">' + escHtml(r.note || '-') + '</td></tr>';
+    });
+  }
+  
+  html += '</tbody></table></div></div>';
+  html += '<div id="receivePagination"></div></div>';
+  
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
+  renderPagination('receivePagination', _receiveData.length, _receivePage, function(p) { _receivePage = p; buildReceivePage(); });
 }
+
+function openReceiveModal(itemId) {
+  var body = '<div class="space-y-4">';
+  if (!itemId) {
+    body += '<div><label class="form-label">เลือกวัสดุ *</label><select id="recItemId" class="form-input">';
+    _itemsData.forEach(function(i) { body += '<option value="' + i.id + '">' + escHtml(i.name) + ' (คงเหลือ ' + i.current_stock + ' ' + i.unit + ')</option>'; });
+    body += '</select></div>';
+  } else {
+    var item = _itemsData.find(function(i) { return i.id === itemId; });
+    body += '<input type="hidden" id="recItemId" value="' + itemId + '">';
+    body += '<p class="text-sm text-gray-600">รายการ: <b>' + escHtml(item.name) + '</b> (คงเหลือ ' + item.current_stock + ' ' + item.unit + ')</p>';
+  }
+  body += fieldHTML('จำนวนที่รับ *', 'recQty', 'number', 1);
+  body += fieldHTML('วันที่', 'recDate', 'date', new Date().toISOString().split('T')[0]);
+  body += '<div class="sm:col-span-2"><label class="form-label">หมายเหตุ</label><textarea id="recNote" class="form-input" rows="2"></textarea></div>';
+  body += '</div>';
+  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
+    + '<button onclick="submitReceive()" class="btn-success"><i class="fi fi-rr-inbox-in mr-1"></i>บันทึกรับเข้า</button>';
+  openModal('รับวัสดุเข้าคลัง', body, footer);
+}
+
+function submitReceive() {
+  var itemEl = document.getElementById('recItemId');
+  var qtyEl = document.getElementById('recQty');
+  var dateEl = document.getElementById('recDate');
+  var noteEl = document.getElementById('recNote');
+  
+  var itemId = itemEl ? itemEl.value : '';
+  var qty    = qtyEl ? parseInt(qtyEl.value) || 0 : 0;
+  var date   = dateEl ? dateEl.value : '';
+  var note   = noteEl ? noteEl.value : '';
+  
+  if (!itemId) { showError('กรุณาเลือกวัสดุ'); return; }
+  if (!qty || qty <= 0) { showError('จำนวนไม่ถูกต้อง'); return; }
+  showLoading('กำลังบันทึก...');
+  callAPI('addReceive', AUTH.token, { item_id: itemId, quantity: qty, date: date, note: note }).then(function(res) {
+    hideLoading(); closeModal();
+    if (res.success) { showSuccess(res.message); renderReceive(); }
+    else showError(res.message);
+  }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+}
+
+// ===== STOCKTAKE =====
+function renderStocktake() {
+  showLoading('โหลดข้อมูล...');
+  var itemsPromise = (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL)
+    ? Promise.resolve({ success: true, data: _itemsData })
+    : callAPI('getItems', AUTH.token).then(function(res) { _itemsData = res.data || []; _itemsCacheTime = Date.now(); return res; });
+  itemsPromise.then(function(res) {
+    hideLoading();
+    _itemsData = res.data || [];
+    buildStocktakePage();
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function buildStocktakePage() {
+  var html = '<div class="fade-in space-y-4">';
+  html += '<div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">';
+  html += '<h3 class="font-semibold text-gray-700"><i class="fi fi-rr-clipboard-list text-navy-600 mr-2"></i>นับสต็อก</h3>';
+  html += '<button onclick="submitStocktake()" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึกการปรับยอด</button></div>';
+  html += '<p class="text-xs text-gray-500">กรอกจำนวนที่นับได้จริงในช่อง "นับจริง" แล้วกดบันทึก ระบบจะปรับยอดให้อัตโนมัติ</p>';
+  html += '<div class="card overflow-hidden"><div class="overflow-x-auto">';
+  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-gray-600 text-xs">';
+  html += '<tr><th class="px-4 py-3 text-left">รหัส/ชื่อ</th><th class="px-4 py-3 text-center">ระบบ</th><th class="px-4 py-3 text-center">นับจริง</th><th class="px-4 py-3 text-center">ผลต่าง</th></tr></thead>';
+  html += '<tbody class="divide-y divide-gray-100">';
+  _itemsData.forEach(function(item) {
+    html += '<tr data-st-id="' + item.id + '"><td class="px-4 py-3"><p class="font-medium text-gray-800">' + escHtml(item.name) + '</p><p class="text-xs text-gray-500">' + escHtml(item.item_code) + ' • ' + escHtml(item.unit) + '</p></td>';
+    html += '<td class="px-4 py-3 text-center font-bold text-gray-800">' + item.current_stock + '</td>';
+    html += '<td class="px-4 py-3 text-center"><input type="number" class="st-count w-20 border border-gray-300 rounded-lg px-2 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-navy-500" data-id="' + item.id + '" value="' + item.current_stock + '"></td>';
+    html += '<td class="px-4 py-3 text-center"><span class="st-diff text-xs font-medium" data-sys="' + item.current_stock + '">-</span></td></tr>';
+  });
+  html += '</tbody></table></div></div></div>';
+  
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
+  
+  document.querySelectorAll('.st-count').forEach(function(inp) {
+    inp.addEventListener('input', function() {
+      var row = inp.closest('tr');
+      if (!row) return;
+      var diffEl = row.querySelector('.st-diff');
+      if (!diffEl) return;
+      
+      var sys = parseInt(diffEl.getAttribute('data-sys')) || 0;
+      var act = parseInt(inp.value) || 0;
+      var diff = act - sys;
+      if (diff === 0) { diffEl.textContent = '-'; diffEl.className = 'st-diff text-xs font-medium text-gray-400'; }
+      else if (diff > 0) { diffEl.textContent = '+' + diff; diffEl.className = 'st-diff text-xs font-medium text-green-600'; }
+      else { diffEl.textContent = '' + diff; diffEl.className = 'st-diff text-xs font-medium text-red-600'; }
+    });
+  });
+}
+
+function submitStocktake() {
+  var inputs = document.querySelectorAll('.st-count');
+  var adjustments = [];
+  inputs.forEach(function(inp) {
+    var row = inp.closest('tr');
+    if (!row) return;
+    var diffEl = row.querySelector('.st-diff');
+    var sys = diffEl ? parseInt(diffEl.getAttribute('data-sys')) || 0 : 0;
+    var act = parseInt(inp.value) || 0;
+    if (act !== sys) adjustments.push({ item_id: inp.getAttribute('data-id'), actual: act, system: sys });
+  });
+  if (adjustments.length === 0) { showError('ไม่มีรายการที่ต้องปรับยอด'); return; }
+  showConfirm('ยืนยันปรับยอด', 'มี ' + adjustments.length + ' รายการที่ต้องปรับยอด ยืนยัน?', function() {
+    showLoading('กำลังปรับยอด...');
+    var promises = adjustments.map(function(a) {
+      return callAPI('updateItem', AUTH.token, a.item_id, { current_stock: a.actual });
+    });
+    Promise.all(promises).then(function() {
+      hideLoading();
+      showSuccess('ปรับยอดเรียบร้อย ' + adjustments.length + ' รายการ');
+      _itemsCacheTime = 0;
+      renderStocktake();
+    }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาดบางรายการ'); });
+  });
+}
+
+// ===== PRINT QR LABELS =====
+var _printQRFilter = { search: '', category: 'all' };
+function renderPrintQRLabels() {
+  showLoading('โหลดข้อมูล...');
+  var itemsPromise = (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL)
+    ? Promise.resolve({ success: true, data: _itemsData })
+    : callAPI('getItems', AUTH.token).then(function(res) { _itemsData = res.data || []; _itemsCacheTime = Date.now(); return res; });
+  itemsPromise.then(function(results) {
+    hideLoading();
+    _itemsData = results.data || [];
+    buildPrintQRPage();
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function buildPrintQRPage() {
+  var source = _itemsData || [];
+  var filtered = source.filter(function(i) {
+    if (i.active === false) return false;
+    if (_printQRFilter.search) {
+      var term = _printQRFilter.search.toLowerCase();
+      var name = (i.name || '').toLowerCase();
+      var code = (i.item_code || '').toLowerCase();
+      if (!name.includes(term) && !code.includes(term)) return false;
+    }
+    if (_printQRFilter.category !== 'all' && i.category !== _printQRFilter.category) return false;
+    return true;
+  });
+  var cats = getCategoryList(_itemsData);
+
+  var html = '<div class="fade-in space-y-4">';
+  html += '<div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">';
+  html += '<div class="flex gap-2 flex-wrap">';
+  html += '<div class="relative"><i class="fi fi-rr-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>';
+  html += '<input type="text" id="printQRSearch" placeholder="ค้นหาวัสดุ..." value="' + escHtml(_printQRFilter.search) + '" onkeyup="debouncePrintQRFilter()" class="pl-9 pr-4 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-500 w-48"></div>';
+  html += '<select id="printQRCat" onchange="applyPrintQRFilter()" class="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none">';
+  html += '<option value="all">ทุกหมวด</option>';
+  cats.forEach(function(c) { html += '<option value="' + escHtml(c) + '" ' + (_printQRFilter.category === c ? 'selected' : '') + '>' + escHtml(c) + '</option>'; });
+  html += '</select></div>';
+  html += '<div class="flex gap-2">';
+  html += '<button onclick="toggleSelectAllQR()" class="btn-secondary btn-sm"><i class="fi fi-rr-check mr-1"></i>เลือกทั้งหมด/ยกเลิก</button>';
+  html += '<button onclick="printSelectedQRLabels()" class="btn-primary btn-sm"><i class="fi fi-rr-print mr-1"></i>พิมพ์ที่เลือก</button></div></div>';
+  html += '<p class="text-xs text-gray-500">เลือกรายการที่ต้องการพิมพ์แล้วกดปุ่ม พิมพ์ที่เลือก (เลือกได้สูงสุด 20 รายการ/หน้า)</p>';
+
+  html += '<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">';
+  if (filtered.length === 0) html += '<p class="col-span-full text-center text-gray-400 py-10">ไม่พบรายการ</p>';
+  filtered.forEach(function(item) {
+    var img = imgUrl(item.image_file_id);
+    var iconClass = 'fi fi-rr-box-open-full';
+    var imgHtml = img ? '<img src="' + img + '" class="w-10 h-10 object-cover rounded-lg border border-gray-200">' : '<div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center"><i class="' + iconClass + ' text-gray-400 text-sm"></i></div>';
+    var name = item.name;
+    var code = item.item_code;
+    html += '<label class="card p-3 flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow" onclick="event.stopPropagation()">';
+    html += '<input type="checkbox" class="qr-print-check w-4 h-4 accent-navy-600 flex-shrink-0" data-id="' + item.id + '" data-type="item">';
+    html += imgHtml;
+    html += '<div class="min-w-0"><p class="text-sm font-medium text-gray-800 truncate">' + escHtml(name) + '</p>';
+    html += '<p class="text-xs text-gray-500">' + escHtml(code || '') + '</p></div>';
+    html += '</label>';
+  });
+  html += '</div></div>';
+  
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
+}
+
+var _printQRFilterTimer;
+function debouncePrintQRFilter() { clearTimeout(_printQRFilterTimer); _printQRFilterTimer = setTimeout(applyPrintQRFilter, 300); }
+function applyPrintQRFilter() {
+  var searchEl = document.getElementById('printQRSearch');
+  var catEl = document.getElementById('printQRCat');
+  _printQRFilter.search   = searchEl ? searchEl.value : '';
+  _printQRFilter.category = catEl ? catEl.value : 'all';
+  buildPrintQRPage();
+}
+function toggleSelectAllQR() {
+  var checks = document.querySelectorAll('.qr-print-check');
+  var allChecked = Array.prototype.every.call(checks, function(c) { return c.checked; });
+  checks.forEach(function(c) { c.checked = !allChecked; });
+}
+
+function printSelectedQRLabels() {
+  var selected = [];
+  document.querySelectorAll('.qr-print-check:checked').forEach(function(c) {
+    var id = c.getAttribute('data-id');
+    var item = _itemsData.find(function(i) { return i.id === id; });
+    if (item) selected.push({ data: item, type: 'item' });
+  });
+  if (selected.length === 0) { showError('กรุณาเลือกอย่างน้อย 1 รายการ'); return; }
+
+  var baseUrl = window.location.origin + window.location.pathname;
+  var win = window.open('', '_blank');
+  var css = 'body{font-family:sarabun,sans-serif;margin:0;padding:8mm;background:#fff}' +
+    '@media print{@page{size:A4;margin:8mm}}' +
+    '.sheet{display:flex;flex-wrap:wrap;gap:5mm;justify-content:flex-start}' +
+    '.label{width:50mm;height:40mm;border:1px solid #ccc;padding:3mm;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;page-break-inside:avoid}' +
+    '.name{font-size:10px;font-weight:700;color:#1a2566;margin:0 0 1mm;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    '.meta{font-size:8px;color:#666;margin:0 0 1.5mm}' +
+    '.qr-wrap{width:22mm;height:22mm}';
+
+  var bodyHtml = '<div class="sheet">';
+  selected.forEach(function(s) {
+    var item = s.data;
+    var qrUrl = baseUrl + '?action=withdraw&item_id=' + item.id;
+    var name = item.name;
+    var code = item.item_code;
+    var extra = item.size || '';
+    var uid = s.type + '_' + item.id;
+    bodyHtml += '<div class="label">';
+    bodyHtml += '<p class="name">' + escHtml(name) + '</p>';
+    bodyHtml += '<p class="meta">' + escHtml(code) + (extra ? ' • ' + escHtml(extra) : '') + '</p>';
+    bodyHtml += '<div class="qr-wrap" id="qr_' + uid + '"></div>';
+    bodyHtml += '</div>';
+  });
+  bodyHtml += '</div>';
+
+  var scriptHtml = '';
+  selected.forEach(function(s) {
+    var item = s.data;
+    var qrUrl = baseUrl + '?action=withdraw&item_id=' + item.id;
+    var uid = s.type + '_' + item.id;
+    scriptHtml += 'new QRCode(document.getElementById("qr_' + uid + '"),{text:"' + qrUrl + '",width:80,height:80,colorDark:"#1a2566",correctLevel:QRCode.CorrectLevel.M});';
+  });
+
+  win.document.write('<html><head><title>พิมพ์ QR สติ๊กเกอร์</title><link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">'
+    + '<style>' + css + '</style></head><body>' + bodyHtml
+    + '<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>'
+    + '<script>' + scriptHtml + 'setTimeout(function(){window.print();},' + (selected.length * 150 + 300) + ');<\/script>'
+    + '</body></html>');
+  win.document.close();
+}
+
+// ===== WITHDRAW =====
+var _wdData    = [];
+var _wdPage    = 1;
+var _wdFilter = 'all';
+
+function renderWithdraw() {
+  showLoading('โหลดข้อมูล...');
+  var itemsPromise = (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL)
+    ? Promise.resolve({ success: true, data: _itemsData })
+    : callAPI('getItems', AUTH.token).then(function(res) { _itemsData = res.data || []; _itemsCacheTime = Date.now(); return res; });
+  Promise.all([ itemsPromise, callAPI('getWithdrawals', AUTH.token, { status: 'all' }) ]).then(function(results) {
+    hideLoading();
+    _itemsData = results[0].data || [];
+    _wdData    = results[1].data || [];
+    _wdPage    = 1;
+    buildWithdrawPage();
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function buildWithdrawPage() {
+  var filtered = _wdFilter === 'all' ? _wdData : _wdData.filter(function(w) { return w.status === _wdFilter; });
+  var paged    = paginate(filtered, _wdPage);
+
+  var html = '<div class="fade-in space-y-4">';
+  html += '<div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">';
+  html += '<h3 class="font-semibold text-gray-700 flex items-center gap-2"><i class="fi fi-rr-inbox-out text-navy-600"></i> รายการคำขอเบิกวัสดุ</h3>';
+  html += '<button onclick="openWithdrawSelectModal()" class="btn-primary flex items-center gap-2"><i class="fi fi-rr-plus"></i> ยื่นคำขอเบิก</button></div>';
+
+  html += '<div class="flex gap-2 border-b">';
+  ['all', 'pending', 'approved', 'rejected'].forEach(function(s) {
+    var labels = { all: 'ทั้งหมด', pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธ' };
+    var count  = s === 'all' ? _wdData.length : _wdData.filter(function(w) { return w.status === s; }).length;
+    html += '<button onclick="setWdFilter(\'' + s + '\')" class="pb-2.5 px-3 text-sm font-medium border-b-2 transition '
+      + (_wdFilter === s ? 'border-navy-700 text-navy-700' : 'border-transparent text-gray-500 hover:text-gray-700') + '">'
+      + labels[s] + ' <span class="ml-1 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">' + count + '</span></button>';
+  });
+  html += '</div>';
+
+  html += '<div class="card overflow-hidden"><div class="overflow-x-auto">';
+  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
+  html += '<tr><th class="px-4 py-3 text-left">เลขที่เบิก</th><th class="px-4 py-3 text-left">วันที่</th>';
+  html += '<th class="px-4 py-3 text-left">รายการ</th><th class="px-4 py-3 text-center">ขอ/อนุมัติ</th>';
+  html += '<th class="px-4 py-3 text-left">วัตถุประสงค์</th><th class="px-4 py-3 text-left">ผู้ขอ</th>';
+  html += '<th class="px-4 py-3 text-center">สถานะ</th><th class="px-4 py-3 text-center">จัดการ</th></tr></thead>';
+  html += '<tbody class="divide-y divide-gray-100">';
+
+  if (paged.length === 0) {
+    html += '<tr><td colspan="8" class="text-center py-10 text-gray-400">ไม่พบรายการ</td></tr>';
+  }
+  paged.forEach(function(w) {
+    var badgeClass = w.status === 'approved' ? 'badge-approved' : w.status === 'rejected' ? 'badge-rejected' : 'badge-pending';
+    var statusLabel = { pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธ' }[w.status] || w.status;
+    html += '<tr>';
+    html += '<td class="px-4 py-2.5 font-mono text-xs text-navy-700">' + escHtml(w.withdraw_no) + (w.via_qr ? '<span class="ml-1 text-teal-600 text-xs" title="สแกน QR"><i class="fi fi-rr-qr-scan"></i></span>' : '') + '</td>';
+    html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + formatDate(w.requested_at) + '</td>';
+    html += '<td class="px-4 py-2.5 font-medium text-gray-700 max-w-xs truncate">' + escHtml(w.item_name) + '</td>';
+    html += '<td class="px-4 py-2.5 text-center text-xs"><span class="text-gray-800 font-bold">' + w.quantity_requested + '</span>';
+    if (w.status === 'approved') html += '<span class="text-green-600 ml-1">/' + w.quantity_approved + '</span>';
+    html += ' <span class="text-gray-400">' + escHtml(w.unit) + '</span></td>';
+    html += '<td class="px-4 py-2.5 text-xs text-gray-500 max-w-xs truncate">' + escHtml(w.purpose || '-') + '</td>';
+    html += '<td class="px-4 py-2.5 text-xs text-gray-600">' + escHtml(w.requested_by_name || '-') + '</td>';
+    html += '<td class="px-4 py-2.5 text-center"><span class="px-2 py-0.5 rounded-full text-xs font-medium ' + badgeClass + '">' + statusLabel + '</span></td>';
+    html += '<td class="px-4 py-2.5 text-center"><div class="flex gap-1 justify-center">';
+    if (w.status === 'pending') {
+      if (AUTH.user.role === 'admin') {
+        html += '<button onclick="openApproveModal(\'' + w.id + '\',' + w.quantity_requested + ')" class="btn-success btn-sm text-xs"><i class="fi fi-rr-check mr-1"></i>อนุมัติ</button>';
+        html += '<button onclick="openRejectModal(\'' + w.id + '\')" class="btn-danger btn-sm text-xs"><i class="fi fi-rr-cross mr-1"></i>ปฏิเสธ</button>';
+      }
+      if (w.requested_by === AUTH.user.id) {
+        html += '<button onclick="doCancelWithdrawal(\'' + w.id + '\')" class="btn-secondary btn-sm text-xs"><i class="fi fi-rr-cross mr-1"></i>ยกเลิก</button>';
+      }
+    } else {
+      html += '<span class="text-xs text-gray-400">—</span>';
+    }
+    html += '</div></td></tr>';
+  });
+  html += '</tbody></table></div></div>';
+
+  html += '<div id="wdPagination"></div></div>';
+  
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
+  renderPagination('wdPagination', filtered.length, _wdPage, function(p) { _wdPage = p; buildWithdrawPage(); });
+}
+
+function setWdFilter(f) { _wdFilter = f; _wdPage = 1; buildWithdrawPage(); }
+
+function openWithdrawSelectModal() {
+  if (_itemsData.length === 0) {
+    showLoading('โหลด...');
+    callAPI('getItems', AUTH.token).then(function(res) { hideLoading(); _itemsData = res.data || []; _openWdSelect(); });
+  } else _openWdSelect();
+}
+function _openWdSelect() {
+  var body = '<div class="space-y-3">'
+    + '<div class="flex gap-2">'
+    + '<div class="relative flex-1"><i class="fi fi-rr-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>'
+    + '<input type="text" id="wdItemSearch" placeholder="ค้นหาวัสดุ..." onkeyup="filterWdItemList()" class="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-500"></div>'
+    + '<button onclick="startWdQRScanner()" class="btn-primary px-3 py-2.5 rounded-xl" title="สแกน QR"><i class="fi fi-rr-qr-scan text-lg"></i></button></div>'
+    + '<div id="wdItemList" class="max-h-72 overflow-y-auto space-y-1">' + buildWdItemList(_itemsData) + '</div>'
+    + '<div id="wdQRReader" class="hidden"></div></div>';
+  openModal('เลือกรายการวัสดุที่ต้องการเบิก', body, '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>');
+}
+function startWdQRScanner() {
+  var searchWrap = document.getElementById('wdItemSearch');
+  var listWrap = document.getElementById('wdItemList');
+  var qrDiv = document.getElementById('wdQRReader');
+  
+  if (searchWrap) searchWrap.parentNode.parentNode.classList.add('hidden');
+  if (listWrap) listWrap.classList.add('hidden');
+  if (qrDiv) {
+    qrDiv.classList.remove('hidden');
+    qrDiv.innerHTML = '<div class="text-center py-4"><div id="wd-qr-reader" class="mx-auto" style="width:280px"></div><button onclick="stopWdQRScanner()" class="btn-secondary btn-sm mt-3"><i class="fi fi-rr-cross mr-1"></i>ปิดกล้อง</button></div>';
+  }
+  
+  setTimeout(function() {
+    try {
+      _qrScanner = new Html5Qrcode('wd-qr-reader');
+      _qrScanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 220, height: 220 } },
+        function(decodedText) {
+          stopWdQRScanner();
+          try {
+            var url = new URL(decodedText);
+            var action = url.searchParams.get('action');
+            var itemId = url.searchParams.get('item_id');
+            if (action === 'withdraw' && itemId) {
+              closeModal();
+              openWithdrawFromQR(itemId);
+            } else {
+              showError('QR Code ไม่ถูกต้อง');
+              stopWdQRScanner();
+            }
+          } catch(e) {
+            showError('QR Code ไม่ถูกต้อง');
+            stopWdQRScanner();
+          }
+        },
+        function(errorMessage) {}
+      ).catch(function(err) {
+        showError('ไม่สามารถเปิดกล้องได้');
+      });
+    } catch(e) {
+      showError('เบราว์เซอร์นี้ไม่รองรับการใช้งานกล้อง');
+    }
+  }, 200);
+}
+function stopWdQRScanner() {
+  var searchWrap = document.getElementById('wdItemSearch');
+  var listWrap = document.getElementById('wdItemList');
+  var qrDiv = document.getElementById('wdQRReader');
+  
+  var resetUI = function() {
+    if (searchWrap) searchWrap.parentNode.parentNode.classList.remove('hidden');
+    if (listWrap) listWrap.classList.remove('hidden');
+    if (qrDiv) qrDiv.classList.add('hidden');
+  };
+
+  if (_qrScanner) {
+    _qrScanner.stop().then(function() {
+      _qrScanner = null; resetUI();
+    }).catch(function() {
+      _qrScanner = null; resetUI();
+    });
+  } else {
+    resetUI();
+  }
+}
+function buildWdItemList(data) {
+  if (data.length === 0) return '<p class="text-center text-sm text-gray-400 py-4">ไม่พบรายการ</p>';
+  return data.map(function(i) {
+    var sClass = getStockClass(i.current_stock, i.min_stock);
+    var imgUrlSrc = imgUrl(i.image_file_id);
+    var imgHtml = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-9 h-9 object-cover rounded-xl border border-gray-200 flex-shrink-0" loading="lazy">' : '<div class="w-9 h-9 bg-navy-100 rounded-xl flex items-center justify-center flex-shrink-0"><i class="fi fi-rr-box-open-full text-navy-700 text-sm"></i></div>';
+    return '<div onclick="selectWdItem(\'' + i.id + '\')" class="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer hover:bg-navy-50 border border-transparent hover:border-navy-200 transition">'
+      + imgHtml
+      + '<div class="flex-1 min-w-0"><p class="text-sm font-medium text-gray-700 truncate">' + escHtml(i.name) + '</p>'
+      + '<p class="text-xs text-gray-400">' + escHtml(i.item_code) + ' • ' + escHtml(i.size || '') + ' • ' + i.current_stock + ' ' + i.unit + '</p></div>'
+      + '<span class="px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ' + sClass + '">' + getStockLabel(i.current_stock, i.min_stock) + '</span></div>';
+  }).join('');
+}
+function filterWdItemList() {
+  var searchEl = document.getElementById('wdItemSearch');
+  var q = searchEl ? searchEl.value : '';
+  var filtered = _itemsData.filter(function(i) { return !q || i.name.toLowerCase().includes(q.toLowerCase()) || (i.item_code || '').includes(q); });
+  var listEl = document.getElementById('wdItemList');
+  if (listEl) listEl.innerHTML = buildWdItemList(filtered);
+}
+function selectWdItem(id) {
+  closeModal();
+  openWithdrawModal(id);
+}
+
+function openWithdrawModal(itemId) {
+  var item = _itemsData.find(function(i) { return i.id === itemId; });
+  if (!item) return;
+  var body = '<div class="space-y-4">';
+  body += '<input type="hidden" id="wdItemId" value="' + itemId + '">';
+  body += '<input type="hidden" id="wdViaQr" value="false">';
+  body += '<p class="text-sm text-gray-600">รายการ: <b>' + escHtml(item.name) + '</b> (คงเหลือ ' + item.current_stock + ' ' + item.unit + ')</p>';
+  body += fieldHTML('จำนวนที่ต้องการเบิก *', 'wdQty', 'number', 1);
+  body += '<div class="sm:col-span-2"><label class="form-label">วัตถุประสงค์ *</label><input type="text" id="wdPurpose" class="form-input" placeholder="ระบุวัตถุประสงค์..."></div>';
+  body += '<div class="sm:col-span-2"><label class="form-label">หมายเหตุ</label><textarea id="wdNote" class="form-input" rows="2"></textarea></div>';
+  body += '</div>';
+  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
+    + '<button onclick="submitWithdraw()" class="btn-primary"><i class="fi fi-rr-inbox-out mr-1"></i>ยื่นคำขอเบิก</button>';
+  openModal('เบิกวัสดุ', body, footer);
+}
+
+function openWithdrawFromQR(itemId) {
+  showLoading('โหลดข้อมูล...');
+  function _build(item) {
+    hideLoading();
+    var img = imgUrl(item.image_file_id);
+    var body = '<div class="space-y-4">';
+    body += '<input type="hidden" id="wdItemId" value="' + itemId + '">';
+    body += '<input type="hidden" id="wdViaQr" value="true">';
+    if (img) body += '<div class="flex justify-center"><img src="' + img + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200 shadow-sm"></div>';
+    body += '<p class="text-sm text-gray-600 text-center">รายการ: <b>' + escHtml(item.name) + '</b> (คงเหลือ ' + item.current_stock + ' ' + item.unit + ')</p>';
+    body += fieldHTML('จำนวนที่ต้องการเบิก *', 'wdQty', 'number', 1);
+    body += '<div class="sm:col-span-2"><label class="form-label">วัตถุประสงค์ *</label><input type="text" id="wdPurpose" class="form-input" placeholder="ระบุวัตถุประสงค์..."></div>';
+    body += '<div class="sm:col-span-2"><label class="form-label">หมายเหตุ</label><textarea id="wdNote" class="form-input" rows="2"></textarea></div>';
+    body += '</div>';
+    var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
+      + '<button onclick="submitWithdraw()" class="btn-primary"><i class="fi fi-rr-inbox-out mr-1"></i>ยื่นคำขอเบิก</button>';
+    openModal('เบิกวัสดุ (QR)', body, footer);
+  }
+  if (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL) {
+    var item = _itemsData.find(function(i) { return i.id == itemId || i.item_code === itemId; });
+    if (item) { _build(item); return; }
+  }
+  callAPI('getItems', AUTH.token).then(function(res) {
+    _itemsData = res.data || [];
+    _itemsCacheTime = Date.now();
+    var item = _itemsData.find(function(i) { return i.id == itemId || i.item_code === itemId; });
+    if (!item) { hideLoading(); showError('ไม่พบรายการวัสดุจาก QR (ID: ' + itemId + ')'); return; }
+    _build(item);
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function submitWithdraw() {
+  var itemEl = document.getElementById('wdItemId');
+  var qtyEl = document.getElementById('wdQty');
+  var purposeEl = document.getElementById('wdPurpose');
+  var noteEl = document.getElementById('wdNote');
+  var qrEl = document.getElementById('wdViaQr');
+  
+  var itemId  = itemEl ? itemEl.value : '';
+  var qty     = qtyEl ? parseInt(qtyEl.value) || 0 : 0;
+  var purpose = purposeEl ? purposeEl.value : '';
+  var note    = noteEl ? noteEl.value : '';
+  var viaQr   = qrEl ? qrEl.value === 'true' : false;
+  
+  if (!itemId) { showError('ไม่พบรายการวัสดุ'); return; }
+  if (!qty || qty <= 0) { showError('กรุณาระบุจำนวนที่ถูกต้อง'); return; }
+  if (!purpose) { showError('กรุณาระบุวัตถุประสงค์'); return; }
+  showLoading('กำลังยื่นคำขอ...');
+  callAPI('addWithdrawal', AUTH.token, { item_id: itemId, quantity: qty, purpose: purpose, note: note, via_qr: viaQr }).then(function(res) {
+    hideLoading(); closeModal();
+    if (res.success) {
+      showSuccess('ยื่นคำขอ ' + res.withdraw_no + ' เรียบร้อย รอการอนุมัติ');
+      if (_currentPage === 'withdraw') renderWithdraw();
+      else if (_currentPage === 'dashboard') renderDashboard();
+    } else showError(res.message);
+  }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+}
+
+// ===== APPROVE =====
+var _approveData = [];
+var _approvePage = 1;
+
+function renderApprove() {
+  if (AUTH.user.role !== 'admin') { loadPage('dashboard'); return; }
+  showLoading('โหลดคำขอเบิก...');
+  callAPI('getWithdrawals', AUTH.token, { status: 'all' }).then(function(res) {
+    hideLoading();
+    _approveData = res.data || [];
+    _approvePage = 1;
+    buildApprovePage('pending');
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function buildApprovePage(filterStatus) {
+  filterStatus = filterStatus || 'pending';
+  var data    = _approveData.filter(function(w) { return filterStatus === 'all' ? true : w.status === filterStatus; });
+  var paged   = paginate(data, _approvePage);
+  var pendingCount = _approveData.filter(function(w) { return w.status === 'pending'; }).length;
+
+  var html = '<div class="fade-in space-y-4">';
+  html += '<div class="flex items-center justify-between">';
+  html += '<h3 class="font-semibold text-gray-700 flex items-center gap-2"><i class="fi fi-rr-check-circle text-navy-600"></i> อนุมัติการเบิกวัสดุ';
+  if (pendingCount > 0) html += ' <span class="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">' + pendingCount + '</span>';
+  html += '</h3>';
+  html += '<div class="flex gap-2">';
+  ['pending', 'approved', 'rejected', 'all'].forEach(function(s) {
+    var labels = { pending: 'รอดำเนินการ', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธแล้ว', all: 'ทั้งหมด' };
+    html += '<button onclick="buildApprovePage(\'' + s + '\')" class="px-3 py-1.5 rounded-xl text-xs font-medium border transition '
+      + (filterStatus === s ? 'bg-navy-700 text-white border-navy-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50') + '">' + labels[s] + '</button>';
+  });
+  html += '</div></div>';
+
+  if (paged.length === 0) {
+    html += '<div class="card p-12 text-center"><i class="fi fi-rr-check-circle text-5xl text-green-400 block mb-3"></i><p class="text-gray-500">ไม่มีรายการ' + (filterStatus === 'pending' ? ' รออนุมัติ' : '') + '</p></div>';
+  } else {
+    paged.forEach(function(w) {
+      var badgeClass = w.status === 'approved' ? 'badge-approved' : w.status === 'rejected' ? 'badge-rejected' : 'badge-pending';
+      var statusLabel = { pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธ' }[w.status] || w.status;
+      html += '<div class="card p-4 flex flex-col sm:flex-row sm:items-center gap-4">';
+      html += '<div class="w-12 h-12 bg-' + (w.status === 'pending' ? 'amber' : 'gray') + '-100 rounded-xl flex items-center justify-center flex-shrink-0">';
+      html += '<i class="fi fi-rr-inbox-out text-' + (w.status === 'pending' ? 'amber' : 'gray') + '-600 text-xl"></i></div>';
+      html += '<div class="flex-1 min-w-0"><div class="flex flex-wrap items-center gap-2 mb-1">';
+      html += '<span class="font-bold text-gray-800 text-sm">' + escHtml(w.item_name) + '</span>';
+      html += '<span class="font-mono text-xs text-navy-600">#' + escHtml(w.withdraw_no) + '</span>';
+      html += '<span class="px-2 py-0.5 rounded-full text-xs font-medium ' + badgeClass + '">' + statusLabel + '</span>';
+      if (w.via_qr) html += '<span class="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full"><i class="fi fi-rr-qr-scan mr-0.5"></i>QR</span>';
+      html += '</div>';
+      html += '<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-gray-500">';
+      html += '<span><i class="fi fi-rr-user mr-1"></i>' + escHtml(w.requested_by_name || '-') + '</span>';
+      html += '<span><i class="fi fi-rr-layers mr-1"></i>' + w.quantity_requested + ' ' + escHtml(w.unit) + '</span>';
+      html += '<span><i class="fi fi-rr-target mr-1"></i>' + escHtml(w.purpose || '-') + '</span>';
+      html += '<span><i class="fi fi-rr-calendar-day mr-1"></i>' + formatDate(w.requested_at) + '</span>';
+      html += '</div>';
+      if (w.status === 'approved') {
+        html += '<p class="text-xs text-green-700 mt-1"><i class="fi fi-rr-check mr-1"></i>อนุมัติ ' + w.quantity_approved + ' ' + w.unit + ' โดย ' + escHtml(w.approved_by_name || '-') + ' เมื่อ ' + formatDate(w.approved_at) + '</p>';
+      }
+      if (w.status === 'rejected' && w.reject_reason) {
+        html += '<p class="text-xs text-red-700 mt-1"><i class="fi fi-rr-cross mr-1"></i>เหตุผล: ' + escHtml(w.reject_reason) + '</p>';
+      }
+      html += '</div>';
+      if (w.status === 'pending') {
+        html += '<div class="flex gap-2 flex-shrink-0">';
+        html += '<button onclick="openApproveModal(\'' + w.id + '\',' + w.quantity_requested + ')" class="btn-success flex items-center gap-1.5"><i class="fi fi-rr-check"></i> อนุมัติ</button>';
+        html += '<button onclick="openRejectModal(\'' + w.id + '\')" class="btn-danger flex items-center gap-1.5"><i class="fi fi-rr-cross"></i> ปฏิเสธ</button>';
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+  }
+  html += '<div id="approvePagination"></div></div>';
+  
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
+  renderPagination('approvePagination', data.length, _approvePage, function(p) { _approvePage = p; buildApprovePage(filterStatus); });
+}
+
+function openApproveModal(wdId, qty) {
+  var wd = _approveData.find(function(w) { return w.id === wdId; });
+  var item = wd && _itemsData.find(function(i) { return i.id === wd.item_id; });
+  var img = item ? imgUrl(item.image_file_id) : '';
+  var imgHtml = img ? '<div class="flex justify-center"><img src="' + img + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200 shadow-sm"></div>' : '';
+  var body = '<div class="space-y-4">';
+  body += imgHtml;
+  body += '<div class="text-center"><p class="font-semibold text-gray-800">' + escHtml((wd && wd.item_name) || '-') + '</p>';
+  body += '<p class="text-xs text-gray-500">ผู้ขอเบิก: <b>' + escHtml((wd && wd.requested_by_name) || '-') + '</b> • วัตถุประสงค์: ' + escHtml((wd && wd.purpose) || '-') + '</p></div>';
+  body += '<div><label class="form-label">จำนวนที่อนุมัติ *</label>';
+  body += '<input type="number" id="approveQty" value="' + qty + '" min="1" max="' + qty + '" class="form-input">';
+  body += '<p class="text-xs text-gray-400 mt-1">จำนวนที่ขอ: ' + qty + ' ' + escHtml((wd && wd.unit) || '') + '</p></div></div>';
+  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
+    + '<button onclick="doApprove(\'' + wdId + '\')" class="btn-success"><i class="fi fi-rr-check mr-1"></i>ยืนยันอนุมัติ</button>';
+  openModal('อนุมัติการเบิก', body, footer);
+}
+
+function doApprove(wdId) {
+  var qtyEl = document.getElementById('approveQty');
+  var qty = qtyEl ? parseInt(qtyEl.value) || 0 : 0;
+  if (!qty || qty <= 0) { showError('กรุณาระบุจำนวน'); return; }
+  closeModal();
+  showLoading('กำลังอนุมัติ...');
+  callAPI('approveWithdrawal', AUTH.token, wdId, qty).then(function(res) {
+    hideLoading();
+    if (res.success) { showSuccess(res.message); renderApprove(); }
+    else showError(res.message);
+  }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+}
+
+function openRejectModal(wdId) {
+  var body = '<div class="space-y-3">'
+    + '<p class="text-sm text-gray-600">กรุณาระบุเหตุผลที่ปฏิเสธคำขอเบิกนี้</p>'
+    + '<div><label class="form-label">เหตุผล *</label>'
+    + '<input type="text" id="rejectReason" placeholder="ระบุเหตุผล..." class="form-input"></div></div>';
+  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
+    + '<button onclick="doReject(\'' + wdId + '\')" class="btn-danger"><i class="fi fi-rr-cross mr-1"></i>ยืนยันปฏิเสธ</button>';
+  openModal('ปฏิเสธคำขอเบิก', body, footer);
+}
+
+function doReject(wdId) {
+  var reasonEl = document.getElementById('rejectReason');
+  var reason = reasonEl ? reasonEl.value : '';
+  if (!reason.trim()) { showError('กรุณาระบุเหตุผล'); return; }
+  closeModal();
+  showLoading('กำลังดำเนินการ...');
+  callAPI('rejectWithdrawal', AUTH.token, wdId, reason).then(function(res) {
+    hideLoading();
+    if (res.success) { showSuccess(res.message); renderApprove(); }
+    else showError(res.message);
+  }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+}
+
+function doCancelWithdrawal(wdId) {
+  showConfirm('ยืนยันยกเลิก', 'ยกเลิกคำขอเบิกนี้?', function() {
+    showLoading('กำลังยกเลิก...');
+    callAPI('cancelWithdrawal', AUTH.token, wdId).then(function(res) {
+      hideLoading();
+      if (res.success) { showSuccess(res.message); renderWithdraw(); }
+      else showError(res.message);
+    }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+  });
+}
+
+// ===== TRANSACTIONS =====
+var _txData    = [];
+var _txPage    = 1;
+var _txFilter = { type: 'all', date_from: '', date_to: '' };
+
+function renderTransactions() {
+  showLoading('โหลดประวัติ...');
+  callAPI('getTransactions', AUTH.token, {}).then(function(res) {
+    hideLoading();
+    _txData = res.data || [];
+    _txPage = 1;
+    buildTransactionsPage();
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function buildTransactionsPage() {
+  var filtered = applyTxFilter(_txData);
+  var paged    = paginate(filtered, _txPage);
+
+  var html = '<div class="fade-in space-y-4">';
+  html += '<div class="card p-4"><div class="flex flex-wrap gap-3 items-end">';
+  html += '<div><label class="form-label">ประเภท</label><select id="txTypeFilter" onchange="applyTxFilterUI()" class="form-input w-36">';
+  ['all', 'receive', 'withdraw'].forEach(function(t) {
+    var labels = { all: 'ทั้งหมด', receive: 'รับเข้า', withdraw: 'เบิกออก' };
+    html += '<option value="' + t + '" ' + (_txFilter.type === t ? 'selected' : '') + '>' + labels[t] + '</option>';
+  });
+  html += '</select></div>';
+  html += '<div><label class="form-label">จากวันที่</label><input type="date" id="txDateFrom" value="' + _txFilter.date_from + '" onchange="applyTxFilterUI()" class="form-input w-40"></div>';
+  html += '<div><label class="form-label">ถึงวันที่</label><input type="date" id="txDateTo" value="' + _txFilter.date_to + '" onchange="applyTxFilterUI()" class="form-input w-40"></div>';
+  html += '<button onclick="clearTxFilter()" class="btn-secondary btn-sm"><i class="fi fi-rr-refresh mr-1"></i>ล้างตัวกรอง</button>';
+  html += '</div></div>';
+
+  var totalR = filtered.filter(function(t) { return t.type === 'receive'; }).length;
+  var totalW = filtered.filter(function(t) { return t.type === 'withdraw'; }).length;
+  html += '<div class="flex gap-2 text-xs">';
+  html += '<span class="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full"><i class="fi fi-rr-inbox-in mr-1"></i>รับเข้า: ' + totalR + '</span>';
+  html += '<span class="bg-purple-50 text-purple-700 px-3 py-1.5 rounded-full"><i class="fi fi-rr-inbox-out mr-1"></i>เบิกออก: ' + totalW + '</span>';
+  html += '<span class="bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full">ทั้งหมด: ' + filtered.length + '</span></div>';
+
+  html += '<div class="card overflow-hidden"><div class="overflow-x-auto">';
+  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
+  html += '<tr><th class="px-4 py-3 text-left">วันที่</th><th class="px-4 py-3 text-center">ประเภท</th>';
+  html += '<th class="px-4 py-3 text-left">เลขที่อ้างอิง</th><th class="px-4 py-3 text-left">รายการ</th>';
+  html += '<th class="px-4 py-3 text-center">จำนวน</th><th class="px-4 py-3 text-center">ก่อน</th>';
+  html += '<th class="px-4 py-3 text-center">หลัง</th><th class="px-4 py-3 text-left">ผู้ดำเนินการ</th></tr></thead>';
+  html += '<tbody class="divide-y divide-gray-100">';
+  if (paged.length === 0) html += '<tr><td colspan="8" class="text-center py-10 text-gray-400">ไม่พบรายการ</td></tr>';
+  paged.forEach(function(t) {
+    var isR = t.type === 'receive';
+    html += '<tr>';
+    html += '<td class="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">' + formatDate(t.date) + '</td>';
+    html += '<td class="px-4 py-2.5 text-center"><span class="px-2 py-0.5 rounded-full text-xs font-medium ' + (isR ? 'badge-receive' : 'badge-withdraw') + '">' + (isR ? 'รับเข้า' : 'เบิกออก') + '</span></td>';
+    html += '<td class="px-4 py-2.5 font-mono text-xs text-navy-700">' + escHtml(t.ref_id || '-') + '</td>';
+    html += '<td class="px-4 py-2.5 font-medium text-gray-700 max-w-xs">' + escHtml(t.item_name || '-') + '</td>';
+    html += '<td class="px-4 py-2.5 text-center font-bold ' + (isR ? 'text-blue-700' : 'text-purple-700') + '">' + (isR ? '+' : '-') + t.quantity + '</td>';
+    html += '<td class="px-4 py-2.5 text-center text-xs text-gray-500">' + (t.stock_before || 0) + '</td>';
+    html += '<td class="px-4 py-2.5 text-center text-xs font-bold text-gray-700">' + (t.stock_after || 0) + '</td>';
+    html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(t.actor_name || '-') + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div></div>';
+  html += '<div id="txPagination"></div></div>';
+  
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
+  renderPagination('txPagination', filtered.length, _txPage, function(p) { _txPage = p; buildTransactionsPage(); });
+}
+
+function applyTxFilter(data) {
+  return data.filter(function(t) {
+    if (_txFilter.type !== 'all' && t.type !== _txFilter.type) return false;
+    if (_txFilter.date_from && (t.date || '') < _txFilter.date_from) return false;
+    if (_txFilter.date_to   && (t.date || '') > _txFilter.date_to)   return false;
+    return true;
+  });
+}
+function applyTxFilterUI() {
+  var typeEl = document.getElementById('txTypeFilter');
+  var fromEl = document.getElementById('txDateFrom');
+  var toEl = document.getElementById('txDateTo');
+  
+  _txFilter.type      = typeEl ? typeEl.value : 'all';
+  _txFilter.date_from = fromEl ? fromEl.value : '';
+  _txFilter.date_to    = toEl ? toEl.value : '';
+  _txPage = 1;
+  buildTransactionsPage();
+}
+function clearTxFilter() {
+  _txFilter = { type: 'all', date_from: '', date_to: '' };
+  _txPage   = 1;
+  buildTransactionsPage();
+}
+
+// ===== REPORTS =====
+var _reportCharts = {};
+
+function renderReports() {
+  var now = new Date();
+  var html = '<div class="fade-in space-y-4">';
+  html += '<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">';
+
+  html += '<div class="card p-5 flex flex-col gap-3 hover:shadow-md transition-shadow">';
+  html += '<div class="w-11 h-11 bg-blue-100 rounded-xl flex items-center justify-center"><i class="fi fi-rr-inbox-in text-blue-600 text-xl"></i></div>';
+  html += '<div><p class="font-semibold text-gray-800">รายงานรับวัสดุเข้า</p><p class="text-xs text-gray-400 mt-0.5">ประวัติการรับวัสดุทั้งหมด</p></div>';
+  html += '<button onclick="loadReceiveReport()" class="btn-primary btn-sm mt-auto"><i class="fi fi-rr-eye mr-1"></i>ดูรายงาน</button></div>';
+
+  html += '<div class="card p-5 flex flex-col gap-3 hover:shadow-md transition-shadow">';
+  html += '<div class="w-11 h-11 bg-purple-100 rounded-xl flex items-center justify-center"><i class="fi fi-rr-inbox-out text-purple-600 text-xl"></i></div>';
+  html += '<div><p class="font-semibold text-gray-800">รายงานเบิกวัสดุออก</p><p class="text-xs text-gray-400 mt-0.5">ประวัติการเบิกและอนุมัติ</p></div>';
+  html += '<button onclick="loadWithdrawReport()" class="btn-primary btn-sm mt-auto"><i class="fi fi-rr-eye mr-1"></i>ดูรายงาน</button></div>';
+
+  html += '<div class="card p-5 flex flex-col gap-3 hover:shadow-md transition-shadow">';
+  html += '<div class="w-11 h-11 bg-green-100 rounded-xl flex items-center justify-center"><i class="fi fi-rr-calendar text-green-600 text-xl"></i></div>';
+  html += '<div><p class="font-semibold text-gray-800">สรุปรายเดือน</p><p class="text-xs text-gray-400 mt-0.5">ยอดรับ-เบิกตาราง Matrix</p></div>';
+  html += '<div class="flex gap-2 mt-auto">';
+  html += '<select id="rptYear" class="form-input flex-1 text-xs">';
+  for (var y = now.getFullYear(); y >= now.getFullYear() - 2; y--) {
+    html += '<option value="' + y + '">' + (y + 543) + '</option>';
+  }
+  html += '</select>';
+  html += '<select id="rptMonth" class="form-input flex-1 text-xs">';
+  var mNames = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  for (var m = 1; m <= 12; m++) {
+    html += '<option value="' + m + '" ' + (m === now.getMonth() + 1 ? 'selected' : '') + '>' + mNames[m - 1] + '</option>';
+  }
+  html += '</select></div>';
+  html += '<button onclick="loadMonthlyReport()" class="btn-success btn-sm"><i class="fi fi-rr-chart-histogram mr-1"></i>ดูรายงาน</button></div>';
+  html += '</div>';
+
+  html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm flex items-center gap-2"><i class="fi fi-rr-triangle-warning text-amber-500"></i> รายการวัสดุที่ต้องเติมสต็อก</h3>';
+  html += '<button onclick="exportLowStock()" class="btn-warning btn-sm flex items-center gap-1"><i class="fi fi-rr-file-spreadsheet"></i> Export</button></div>';
+  html += '<div class="card-body" id="lowStockReport"><div class="flex justify-center py-4"><div class="w-6 h-6 border-2 border-navy-600 border-t-transparent rounded-full animate-spin"></div></div></div></div>';
+
+  html += '<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">';
+  html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm flex items-center gap-2"><i class="fi fi-rr-chart-histogram text-navy-600"></i> ยอดเบิกรายเดือน (6 เดือนล่าสุด)</h3></div>';
+  html += '<div class="card-body"><div style="position:relative;height:220px"><canvas id="rptChartMonthly"></canvas></div></div></div>';
+  html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm flex items-center gap-2"><i class="fi fi-rr-star text-amber-500"></i> Top 10 วัสดุที่เบิกมากสุด</h3></div>';
+  html += '<div class="card-body" id="rptTopItems"><div class="flex justify-center py-4"><div class="w-6 h-6 border-2 border-navy-600 border-t-transparent rounded-full animate-spin"></div></div></div></div>';
+  html += '</div>';
+
+  html += '<div id="reportDataSection"></div></div>';
+  
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
+
+  Promise.all([
+    callAPI('getDashboardStats', AUTH.token),
+    callAPI('getItems', AUTH.token)
+  ]).then(function(results) {
+    var stats = results[0];
+    var items = results[1].data || [];
+    var lowItems = items.filter(function(i) { return i.current_stock <= (i.min_stock || 5); });
+
+    var lsHtml = '';
+    if (lowItems.length === 0) {
+      lsHtml = '<p class="text-center text-sm text-gray-400 py-4">ไม่มีรายการวัสดุที่ต้องเติม</p>';
+    } else {
+      lsHtml = '<div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
+      lsHtml += '<tr><th class="px-4 py-2 text-left">รหัส</th><th class="px-4 py-2 text-left">ชื่อวัสดุ</th><th class="px-4 py-2 text-center">คงเหลือ</th><th class="px-4 py-2 text-center">ขั้นต่ำ</th><th class="px-4 py-2 text-center">สถานะ</th></tr>';
+      lsHtml += '</thead><tbody class="divide-y divide-gray-100">';
+      lowItems.forEach(function(i) {
+        var sc = getStockClass(i.current_stock, i.min_stock);
+        lsHtml += '<tr><td class="px-4 py-2 font-mono text-xs text-navy-700">' + escHtml(i.item_code) + '</td>';
+        lsHtml += '<td class="px-4 py-2 font-medium text-gray-700">' + escHtml(i.name) + '</td>';
+        lsHtml += '<td class="px-4 py-2 text-center font-bold">' + i.current_stock + ' ' + escHtml(i.unit) + '</td>';
+        lsHtml += '<td class="px-4 py-2 text-center text-gray-400">' + i.min_stock + '</td>';
+        lsHtml += '<td class="px-4 py-2 text-center"><span class="px-2 py-0.5 rounded-full text-xs ' + sc + '">' + getStockLabel(i.current_stock, i.min_stock) + '</span></td></tr>';
+      });
+      lsHtml += '</tbody></table></div>';
+    }
+    var lsReport = document.getElementById('lowStockReport');
+    if (lsReport) lsReport.innerHTML = lsHtml;
+
+    var rptTop = document.getElementById('rptTopItems');
+    if (rptTop) {
+      if (stats.top_items && stats.top_items.length > 0) {
+        var tiHtml = '<div class="space-y-2">';
+        var maxQ = stats.top_items[0].qty || 1;
+        stats.top_items.forEach(function(item, idx) {
+          var pct = Math.round(item.qty / maxQ * 100);
+          tiHtml += '<div class="flex items-center gap-2">';
+          tiHtml += '<span class="text-xs font-bold text-gray-400 w-5 text-right">' + (idx + 1) + '</span>';
+          tiHtml += '<div class="flex-1"><p class="text-xs font-medium text-gray-700 mb-0.5 truncate">' + escHtml(item.name) + '</p>';
+          tiHtml += '<div class="progress-bar"><div class="progress-fill bg-navy-600" style="width:' + pct + '%"></div></div></div>';
+          tiHtml += '<span class="text-xs font-bold text-navy-700 w-8 text-right">' + item.qty + '</span></div>';
+        });
+        tiHtml += '</div>';
+        rptTop.innerHTML = tiHtml;
+      } else {
+        rptTop.innerHTML = '<p class="text-center text-sm text-gray-400 py-4">ยังไม่มีข้อมูลการเบิก</p>';
+      }
+    }
+
+    var rptChartEl = document.getElementById('rptChartMonthly');
+    if (stats.monthly && rptChartEl) {
+      if (_reportCharts.monthly) _reportCharts.monthly.destroy();
+      _reportCharts.monthly = new Chart(rptChartEl, {
+        type: 'bar',
+        data: {
+          labels: stats.monthly.map(function(m) { return m.label; }),
+          datasets: [
+            { label: 'รับเข้า', data: stats.monthly.map(function(m) { return m.receive; }), backgroundColor: '#3b82f6', borderRadius: 5, barPercentage: 0.6 },
+            { label: 'เบิกออก', data: stats.monthly.map(function(m) { return m.withdraw; }), backgroundColor: '#8b5cf6', borderRadius: 5, barPercentage: 0.6 }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { font: { family: 'Sarabun', size: 11 }, boxWidth: 12 } } }, scales: { y: { ticks: { font: { family: 'Sarabun', size: 11 } }, grid: { color: '#f3f4f6' } }, x: { ticks: { font: { family: 'Sarabun', size: 11 } }, grid: { display: false } } } }
+      });
+    }
+  }).catch(function(err) { console.error(err); });
+}
+
+function loadReceiveReport() {
+  showLoading('โหลดรายงาน...');
+  callAPI('getReceives', AUTH.token, {}).then(function(res) {
+    hideLoading();
+    var data = res.data || [];
+    var html = '<div class="card mt-4"><div class="card-header">';
+    html += '<h3 class="font-semibold text-gray-700 text-sm">รายงานรับวัสดุเข้าคลัง (' + data.length + ' รายการ)</h3>';
+    html += '<button onclick="exportReport(\'receives\')" class="btn-success btn-sm flex items-center gap-1"><i class="fi fi-rr-file-spreadsheet"></i> Export CSV</button></div>';
+    html += '<div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
+    html += '<tr><th class="px-4 py-2 text-left">เลขที่</th><th class="px-4 py-2 text-left">วันที่</th><th class="px-4 py-2 text-left">รายการ</th><th class="px-4 py-2 text-center">จำนวน</th><th class="px-4 py-2 text-left">ผู้รับ</th><th class="px-4 py-2 text-left">หมายเหตุ</th></tr>';
+    html += '</thead><tbody class="divide-y">';
+    if (!data.length) html += '<tr><td colspan="6" class="text-center py-8 text-gray-400">ไม่มีรายการ</td></tr>';
+    data.slice(0, 50).forEach(function(r) {
+      html += '<tr><td class="px-4 py-2 font-mono text-xs text-navy-700">' + escHtml(r.receive_no) + '</td>';
+      html += '<td class="px-4 py-2 text-xs text-gray-500">' + formatDate(r.date) + '</td>';
+      html += '<td class="px-4 py-2 text-gray-700">' + escHtml(r.item_name || '-') + '</td>';
+      html += '<td class="px-4 py-2 text-center font-bold text-blue-700">+' + r.quantity + ' ' + escHtml(r.unit || '') + '</td>';
+      html += '<td class="px-4 py-2 text-xs text-gray-500">' + escHtml(r.received_by_name || '-') + '</td>';
+      html += '<td class="px-4 py-2 text-xs text-gray-400">' + escHtml(r.note || '-') + '</td></tr>';
+    });
+    if (data.length > 50) html += '<tr><td colspan="6" class="text-center py-3 text-xs text-gray-400">แสดง 50 รายการแรก Export เพื่อดูทั้งหมด</td></tr>';
+    html += '</tbody></table></div></div>';
+    
+    var dataSec = document.getElementById('reportDataSection');
+    if (dataSec) {
+      dataSec.innerHTML = html;
+      dataSec.scrollIntoView({ behavior: 'smooth' });
+    }
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function loadWithdrawReport() {
+  showLoading('โหลดรายงาน...');
+  callAPI('getWithdrawals', AUTH.token, { status: 'all' }).then(function(res) {
+    hideLoading();
+    var data = res.data || [];
+    var html = '<div class="card mt-4"><div class="card-header">';
+    html += '<h3 class="font-semibold text-gray-700 text-sm">รายงานเบิกวัสดุออก (' + data.length + ' รายการ)</h3>';
+    html += '<button onclick="exportReport(\'withdrawals\')" class="btn-success btn-sm flex items-center gap-1"><i class="fi fi-rr-file-spreadsheet"></i> Export CSV</button></div>';
+    html += '<div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
+    html += '<tr><th class="px-4 py-2 text-left">เลขที่</th><th class="px-4 py-2 text-left">วันที่</th><th class="px-4 py-2 text-left">รายการ</th><th class="px-4 py-2 text-center">ขอ/อนุมัติ</th><th class="px-4 py-2 text-left">ผู้เบิก</th><th class="px-4 py-2 text-left">วัตถุประสงค์</th><th class="px-4 py-2 text-center">สถานะ</th></tr>';
+    html += '</thead><tbody class="divide-y">';
+    if (!data.length) html += '<tr><td colspan="7" class="text-center py-8 text-gray-400">ไม่มีรายการ</td></tr>';
+    data.slice(0, 50).forEach(function(w) {
+      var bc = w.status === 'approved' ? 'badge-approved' : w.status === 'rejected' ? 'badge-rejected' : 'badge-pending';
+      var sl = { pending: 'รออนุมัติ', approved: 'อนุมัติ', rejected: 'ปฏิเสธ' }[w.status] || w.status;
+      html += '<tr><td class="px-4 py-2 font-mono text-xs text-navy-700">' + escHtml(w.withdraw_no) + '</td>';
+      html += '<td class="px-4 py-2 text-xs text-gray-500">' + formatDate(w.requested_at) + '</td>';
+      html += '<td class="px-4 py-2 text-gray-700">' + escHtml(w.item_name || '-') + '</td>';
+      html += '<td class="px-4 py-2 text-center text-xs">' + w.quantity_requested + (w.quantity_approved ? '/' + w.quantity_approved : '') + ' ' + escHtml(w.unit || '') + '</td>';
+      html += '<td class="px-4 py-2 text-xs text-gray-500">' + escHtml(w.requested_by_name || '-') + '</td>';
+      html += '<td class="px-4 py-2 text-xs text-gray-400">' + escHtml(w.purpose || '-') + '</td>';
+      html += '<td class="px-4 py-2 text-center"><span class="px-2 py-0.5 rounded-full text-xs ' + bc + '">' + sl + '</span></td></tr>';
+    });
+    if (data.length > 50) html += '<tr><td colspan="7" class="text-center py-3 text-xs text-gray-400">แสดง 50 รายการแรก Export เพื่อดูทั้งหมด</td></tr>';
+    html += '</tbody></table></div></div>';
+    
+    var dataSec = document.getElementById('reportDataSection');
+    if (dataSec) {
+      dataSec.innerHTML = html;
+      dataSec.scrollIntoView({ behavior: 'smooth' });
+    }
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function loadMonthlyReport() {
+  var yearEl = document.getElementById('rptYear');
+  var monthEl = document.getElementById('rptMonth');
+  var year  = yearEl ? parseInt(yearEl.value) || new Date().getFullYear() : new Date().getFullYear();
+  var month = monthEl ? parseInt(monthEl.value) || new Date().getMonth() + 1 : new Date().getMonth() + 1;
+  
+  showLoading('โหลดรายงานรายเดือน...');
+  callAPI('getMonthlyReport', AUTH.token, year, month).then(function(res) {
+    hideLoading();
+    if (!res.success) { showError(res.message); return; }
+    var data = res.data || [];
+    var mNames = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    var daysInMonth = new Date(year, month, 0).getDate();
+
+    var html = '<div class="card mt-4"><div class="card-header">';
+    html += '<h3 class="font-semibold text-gray-700 text-sm">สรุปการเบิกวัสดุ ' + mNames[month - 1] + ' ' + (year + 543) + '</h3>';
+    html += '<button onclick="exportMonthlyExcel(' + year + ',' + month + ')" class="btn-success btn-sm flex items-center gap-1"><i class="fi fi-rr-file-spreadsheet"></i> Export CSV</button></div>';
+    html += '<div class="overflow-x-auto"><table class="w-full text-xs border-collapse">';
+    html += '<thead class="bg-navy-700 text-white sticky top-0">';
+    html += '<tr><th class="px-2 py-2 text-left min-w-[160px] border border-navy-600">ชื่อวัสดุ</th>';
+    html += '<th class="px-2 py-2 text-center border border-navy-600 w-12">หน่วย</th>';
+    html += '<th class="px-2 py-2 text-center border border-navy-600 w-14">รับเข้า</th>';
+    for (var d = 1; d <= daysInMonth; d++) {
+      html += '<th class="px-1 py-2 text-center border border-navy-600 w-8">' + d + '</th>';
+    }
+    html += '<th class="px-2 py-2 text-center border border-navy-600 w-14">รวมเบิก</th>';
+    html += '<th class="px-2 py-2 text-center border border-navy-600 w-14">คงเหลือ</th></tr></thead>';
+    html += '<tbody>';
+    if (!data.length) {
+      html += '<tr><td colspan="' + (daysInMonth + 5) + '" class="text-center py-6 text-gray-400">ไม่มีข้อมูล</td></tr>';
+    }
+    data.forEach(function(row, idx) {
+      html += '<tr class="' + (idx % 2 === 0 ? 'bg-white' : 'bg-gray-50') + ' hover:bg-blue-50">';
+      html += '<td class="px-2 py-1.5 border border-gray-200 font-medium text-gray-700">' + escHtml(row.name) + (row.size ? ' <span class="text-gray-400">(' + escHtml(row.size) + ')</span>' : '') + '</td>';
+      html += '<td class="px-2 py-1.5 border border-gray-200 text-center text-gray-500">' + escHtml(row.unit) + '</td>';
+      html += '<td class="px-2 py-1.5 border border-gray-200 text-center font-bold text-blue-700">' + (row.received || 0) + '</td>';
+      for (var day = 1; day <= daysInMonth; day++) {
+        var dayVal = row.daily[day] || 0;
+        html += '<td class="px-1 py-1.5 border border-gray-200 text-center ' + (dayVal > 0 ? 'bg-purple-50 font-bold text-purple-700' : 'text-gray-300') + '">' + (dayVal > 0 ? dayVal : '') + '</td>';
+      }
+      html += '<td class="px-2 py-1.5 border border-gray-200 text-center font-bold text-purple-700">' + (row.total_withdraw || 0) + '</td>';
+      html += '<td class="px-2 py-1.5 border border-gray-200 text-center font-bold ' + (row.current_stock <= row.min_stock ? 'text-red-600' : 'text-green-700') + '">' + row.current_stock + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    html += '<p class="text-xs text-gray-400 px-4 py-2">* ค่าในตารางแสดงจำนวนที่เบิกออกแต่ละวัน</p></div>';
+    
+    var dataSec = document.getElementById('reportDataSection');
+    if (dataSec) {
+      dataSec.innerHTML = html;
+      dataSec.scrollIntoView({ behavior: 'smooth' });
+    }
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function downloadXlsx(rows, headers, filename) {
+  if (!window.XLSX) { showError('ไม่พบ library XLSX'); return; }
+  var data = rows.map(function(r) {
+    var obj = {};
+    headers.forEach(function(h) { obj[h.title] = r[h.key] !== undefined ? r[h.key] : ''; });
+    return obj;
+  });
+  var ws = XLSX.utils.json_to_sheet(data);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  XLSX.writeFile(wb, filename + '.xlsx');
+}
+
+function exportReport(type) {
+  showLoading('กำลัง Export...');
+  var apiFn = type === 'receives' ? 'getReceives' : 'getWithdrawals';
+  callAPI(apiFn, AUTH.token, {}).then(function(res) {
+    hideLoading();
+    if (!res.success) { showError(res.message); return; }
+    var data = res.data || [];
+    var rows, headers;
+    if (type === 'receives') {
+      headers = [{ key: 'receive_no', title: 'เลขที่' }, { key: 'date', title: 'วันที่' }, { key: 'item_name', title: 'รายการ' }, { key: 'quantity', title: 'จำนวน' }, { key: 'created_by_name', title: 'ผู้รับ' }, { key: 'note', title: 'หมายเหตุ' }];
+      rows = data.map(function(r) { var item = _itemsData.find(function(i) { return i.id === r.item_id; }) || {}; return { receive_no: r.receive_no || '', date: (r.date || '').split('T')[0], item_name: item.name || r.item_id, quantity: r.quantity || 0, created_by_name: r.created_by_name || '', note: r.note || '' }; });
+    } else {
+      headers = [{ key: 'withdraw_no', title: 'เลขที่' }, { key: 'date', title: 'วันที่' }, { key: 'item_name', title: 'รายการ' }, { key: 'quantity', title: 'จำนวน' }, { key: 'requester_name', title: 'ผู้เบิก' }, { key: 'status', title: 'สถานะ' }, { key: 'purpose', title: 'วัตถุประสงค์' }];
+      rows = data.map(function(w) { var item = _itemsData.find(function(i) { return i.id === w.item_id; }) || {}; return { withdraw_no: w.withdraw_no || '', date: (w.date || '').split('T')[0], item_name: item.name || w.item_id, quantity: w.quantity || 0, requester_name: w.requester_name || '', status: w.status === 'approved' ? 'อนุมัติ' : w.status === 'rejected' ? 'ปฏิเสธ' : 'รออนุมัติ', purpose: w.purpose || '' }; });
+    }
+    downloadXlsx(rows, headers, 'รายงาน_' + type);
+  }).catch(function() { hideLoading(); showError('Export ไม่สำเร็จ'); });
+}
+
+function exportMonthlyExcel(year, month) {
+  showLoading('กำลัง Export...');
+  callAPI('getMonthlyReport', AUTH.token, year, month).then(function(res) {
+    hideLoading();
+    if (!res.success) { showError(res.message); return; }
+    var data = res.data || [];
+    var headers = [{ key: 'item_name', title: 'ชื่อวัสดุ' }, { key: 'total_requested', title: 'จำนวนขอเบิก' }, { key: 'total_approved', title: 'จำนวนอนุมัติ' }];
+    var rows = data.map(function(d) { return { item_name: d.item_name || '', total_requested: d.total_requested || 0, total_approved: d.total_approved || 0 }; });
+    downloadXlsx(rows, headers, 'รายงานเบิก_' + month + '_' + (year + 543));
+  }).catch(function() { hideLoading(); showError('Export ไม่สำเร็จ'); });
+}
+
+function exportLowStock() {
+  showLoading('กำลัง Export...');
+  callAPI('getItems', AUTH.token).then(function(res) {
+    hideLoading();
+    if (!res.success) { showError(res.message); return; }
+    var items = (res.data || []).filter(function(i) { return i.active !== false && i.current_stock <= i.min_stock; });
+    var headers = [{ key: 'item_code', title: 'รหัส' }, { key: 'name', title: 'ชื่อวัสดุ' }, { key: 'category', title: 'หมวดหมู่' }, { key: 'current_stock', title: 'คงเหลือ' }, { key: 'min_stock', title: 'ขั้นต่ำ' }, { key: 'unit', title: 'หน่วย' }];
+    var rows = items.map(function(i) { return { item_code: i.item_code || '', name: i.name || '', category: i.category || '', current_stock: i.current_stock || 0, min_stock: i.min_stock || 0, unit: i.unit || '' }; });
+    downloadXlsx(rows, headers, 'รายงานสต็อกต่ำ');
+  }).catch(function() { hideLoading(); showError('Export ไม่สำเร็จ'); });
+}
+
+// ===== PROFILE =====
+function renderProfile() {
+  showLoading('โหลดโปรไฟล์...');
+  callAPI('getUsers', AUTH.token).then(function(res) {
+    hideLoading();
+    var users = res.data || [];
+    var user  = users.find(function(u) { return u.id === AUTH.user.id; }) || AUTH.user;
+    buildProfilePage(user);
+  }).catch(function() {
+    hideLoading();
+    buildProfilePage(AUTH.user);
+  });
+}
+
+function buildProfilePage(user) {
+  var html = '<div class="fade-in w-full space-y-4">';
+
+  html += '<div class="card p-6">';
+  html += '<div class="flex items-center gap-5 mb-6">';
+  html += '<div class="relative">';
+  html += '<div class="w-20 h-20 rounded-2xl bg-navy-100 flex items-center justify-center overflow-hidden shadow">';
+  html += '<i class="fi fi-rr-user text-navy-600 text-3xl"></i>';
+  html += '</div>';
+  html += '<label class="absolute -bottom-1 -right-1 w-6 h-6 bg-navy-700 rounded-lg flex items-center justify-center cursor-pointer hover:bg-navy-800 transition">';
+  html += '<i class="fi fi-rr-camera text-white text-xs"></i>';
+  html += '<input type="file" accept="image/*" class="hidden" onchange="uploadAvatar(event)"></label></div>';
+  html += '<div>';
+  html += '<h2 class="text-xl font-bold text-gray-800">' + escHtml(user.name || user.username) + '</h2>';
+  html += '<p class="text-sm text-gray-500">@' + escHtml(user.username || '-') + '</p>';
+  html += '<span class="mt-1 inline-block px-3 py-0.5 bg-navy-100 text-navy-700 rounded-full text-xs font-semibold">' + (ROLE_LABELS[user.role] || user.role) + '</span>';
+  html += '</div></div>';
+  html += '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">';
+  html += '<div><label class="form-label">ชื่อ-นามสกุล</label><input type="text" id="profName" value="' + escHtml(user.name || '') + '" class="form-input"></div>';
+  html += '<div><label class="form-label">อีเมล</label><input type="email" id="profEmail" value="' + escHtml(user.email || '') + '" class="form-input"></div>';
+  html += '<div><label class="form-label">เบอร์โทรศัพท์</label><input type="text" id="profPhone" value="' + escHtml(user.phone || '') + '" class="form-input"></div>';
+  html += '<div><label class="form-label">Telegram Chat ID <span class="text-gray-400 text-xs">(สำหรับรับแจ้งเตือนส่วนตัว)</span></label>';
+  html += '<input type="text" id="profTgId" value="' + escHtml(user.telegram_chat_id || '') + '" placeholder="เช่น 123456789" class="form-input"></div>';
+  html += '</div>';
+  html += '<div class="flex justify-end mt-4">';
+  html += '<button onclick="saveProfile(\'' + user.id + '\')" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึกข้อมูล</button></div>';
+  html += '</div>';
+
+  html += '<div class="card p-6"><h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2"><i class="fi fi-rr-lock text-navy-600"></i> เปลี่ยนรหัสผ่าน</h3>';
+  html += '<div class="space-y-3">';
+  html += passFieldHTML('รหัสผ่านเดิม *', 'profOldPass');
+  html += passFieldHTML('รหัสผ่านใหม่ *', 'profNewPass');
+  html += passFieldHTML('ยืนยันรหัสผ่านใหม่ *', 'profConfPass');
+  html += '</div>';
+  html += '<div class="flex justify-end mt-4"><button onclick="doChangePassword()" class="btn-primary"><i class="fi fi-rr-lock mr-1"></i>เปลี่ยนรหัสผ่าน</button></div></div>';
+
+  html += '<div class="card p-4 flex items-center gap-4">';
+  html += '<div class="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center"><i class="fi fi-rr-shield-check text-green-600 text-lg"></i></div>';
+  html += '<div><p class="font-semibold text-gray-700 text-sm">สถานะบัญชี</p>';
+  html += '<p class="text-xs text-gray-400">บทบาท: ' + (ROLE_LABELS[user.role] || user.role) + ' | เข้าสู่ระบบล่าสุด: ' + formatDateTime(user.last_login || '-') + '</p></div></div>';
+
+  html += '</div>';
+  
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
+}
+
+function passFieldHTML(label, id) {
+  return '<div><label class="form-label">' + escHtml(label) + '</label>'
+    + '<div class="relative"><input type="password" id="' + id + '" class="form-input pr-10" placeholder="••••••••">'
+    + '<button type="button" onclick="togglePass(\'' + id + '\',this)" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">'
+    + '<i class="fi fi-rr-eye text-sm"></i></button></div></div>';
+}
+
+function saveProfile(userId) {
+  var nameEl = document.getElementById('profName');
+  var emailEl = document.getElementById('profEmail');
+  var phoneEl = document.getElementById('profPhone');
+  var tgEl = document.getElementById('profTgId');
+
+  var data = {
+    name:  nameEl ? nameEl.value : '',
+    email: emailEl ? emailEl.value : '',
+    phone: phoneEl ? phoneEl.value : '',
+    telegram_chat_id: tgEl ? tgEl.value : ''
+  };
+  if (!data.name.trim()) { showError('กรุณากรอกชื่อ'); return; }
+  showLoading('กำลังบันทึก...');
+  callAPI('updateUser', AUTH.token, userId, data).then(function(res) {
+    hideLoading();
+    if (res.success) {
+      AUTH.user.name = data.name;
+      localStorage.setItem('sup_user', JSON.stringify(AUTH.user));
+      var sbName = document.getElementById('sidebarName');
+      if (sbName) sbName.textContent = data.name;
+      showSuccess(res.message);
+    } else showError(res.message);
+  }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+}
+
+function doChangePassword() {
+  var oldPassEl = document.getElementById('profOldPass');
+  var newPassEl = document.getElementById('profNewPass');
+  var confPassEl = document.getElementById('profConfPass');
+
+  var oldPass  = oldPassEl ? oldPassEl.value : '';
+  var newPass  = newPassEl ? newPassEl.value : '';
+  var confPass = confPassEl ? confPassEl.value : '';
+  
+  if (!oldPass || !newPass || !confPass) { showError('กรุณากรอกข้อมูลให้ครบ'); return; }
+  if (newPass !== confPass) { showError('รหัสผ่านใหม่ไม่ตรงกัน'); return; }
+  if (newPass.length < 6) { showError('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร'); return; }
+  showLoading('กำลังเปลี่ยนรหัสผ่าน...');
+  callAPI('changePassword', AUTH.token, oldPass, newPass).then(function(res) {
+    hideLoading();
+    if (res.success) {
+      showSuccess(res.message);
+      ['profOldPass', 'profNewPass', 'profConfPass'].forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ''; });
+    } else showError(res.message);
+  }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+}
+
+function uploadAvatar(event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) { showError('ไฟล์ต้องไม่เกิน 2 MB'); return; }
+  showLoading('กำลังอัปโหลดรูป...');
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var base64 = e.target.result.split(',')[1];
+    callAPI('uploadFile', AUTH.token, base64, file.type, file.name).then(function(res) {
+      hideLoading();
+      if (res.success) {
+        callAPI('updateUser', AUTH.token, AUTH.user.id, { avatar: res.file_id }).then(function() {
+          showSuccess('อัปโหลดรูปโปรไฟล์สำเร็จ');
+          renderProfile();
+        });
+      } else showError(res.message);
+    }).catch(function() { hideLoading(); showError('อัปโหลดไม่สำเร็จ'); });
+  };
+  reader.readAsDataURL(file);
+}
+
+// ===== USERS =====
+var _usersData = [];
+var _usersPage = 1;
+
+function renderUsers() {
+  if (AUTH.user.role !== 'admin') { loadPage('dashboard'); return; }
+  showLoading('โหลดรายชื่อผู้ใช้...');
+  callAPI('getUsers', AUTH.token).then(function(res) {
+    hideLoading();
+    _usersData = res.data || [];
+    _usersPage = 1;
+    buildUsersPage();
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function buildUsersPage() {
+  var paged = paginate(_usersData, _usersPage);
+  var html = '<div class="fade-in space-y-4">';
+  html += '<div class="flex items-center justify-between">';
+  html += '<h3 class="font-semibold text-gray-700 flex items-center gap-2"><i class="fi fi-rr-users text-navy-600"></i> ผู้ใช้งานทั้งหมด (' + _usersData.length + ')</h3>';
+  html += '<button onclick="openAddUserModal()" class="btn-primary flex items-center gap-2"><i class="fi fi-rr-user-add"></i> เพิ่มผู้ใช้</button></div>';
+
+  html += '<div class="card overflow-hidden"><div class="hidden md:block overflow-x-auto">';
+  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
+  html += '<tr><th class="px-4 py-3 text-left">ชื่อ-นามสกุล</th><th class="px-4 py-3 text-left">Username</th>';
+  html += '<th class="px-4 py-3 text-left">บทบาท</th><th class="px-4 py-3 text-left">อีเมล</th>';
+  html += '<th class="px-4 py-3 text-left">เข้าสู่ระบบล่าสุด</th><th class="px-4 py-3 text-center">สถานะ</th>';
+  html += '<th class="px-4 py-3 text-center">จัดการ</th></tr></thead><tbody class="divide-y divide-gray-100">';
+  if (!paged.length) html += '<tr><td colspan="7" class="text-center py-10 text-gray-400">ไม่มีผู้ใช้งาน</td></tr>';
+  paged.forEach(function(u) {
+    var roleColor = u.role === 'admin' ? 'bg-navy-100 text-navy-700' : u.role === 'staff' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700';
+    html += '<tr>';
+    html += '<td class="px-4 py-2.5"><div class="flex items-center gap-2">';
+    html += '<div class="w-8 h-8 rounded-xl bg-navy-100 flex items-center justify-center flex-shrink-0"><i class="fi fi-rr-user text-navy-600 text-sm"></i></div>';
+    html += '<span class="font-medium text-gray-700">' + escHtml(u.name || '-') + '</span></div></td>';
+    html += '<td class="px-4 py-2.5 font-mono text-xs text-gray-500">' + escHtml(u.username) + '</td>';
+    html += '<td class="px-4 py-2.5"><span class="px-2 py-0.5 rounded-full text-xs font-medium ' + roleColor + '">' + (ROLE_LABELS[u.role] || u.role) + '</span></td>';
+    html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(u.email || '-') + '</td>';
+    html += '<td class="px-4 py-2.5 text-xs text-gray-400">' + formatDateTime(u.last_login) + '</td>';
+    html += '<td class="px-4 py-2.5 text-center"><span class="px-2 py-0.5 rounded-full text-xs font-medium ' + (u.active !== false ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700') + '">' + (u.active !== false ? 'ใช้งาน' : 'ระงับ') + '</span></td>';
+    html += '<td class="px-4 py-2.5 text-center"><div class="flex gap-1 justify-center">';
+    html += '<button onclick="openEditUserModal(\'' + u.id + '\')" title="แก้ไข" class="w-7 h-7 bg-blue-100 text-blue-700 rounded-lg flex items-center justify-center hover:bg-blue-200"><i class="fi fi-rr-edit text-xs"></i></button>';
+    html += '<button onclick="doResetPassword(\'' + u.id + '\')" title="Reset Password" class="w-7 h-7 bg-amber-100 text-amber-700 rounded-lg flex items-center justify-center hover:bg-amber-200"><i class="fi fi-rr-lock text-xs"></i></button>';
+    if (u.id !== AUTH.user.id) {
+      html += '<button onclick="doToggleUser(\'' + u.id + '\',\'' + escHtml(u.name || u.username) + '\')" title="' + (u.active !== false ? 'ระงับ' : 'เปิด') + 'บัญชี" class="w-7 h-7 ' + (u.active !== false ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200') + ' rounded-lg flex items-center justify-center"><i class="fi fi-rr-' + (u.active !== false ? 'ban' : 'check-circle') + ' text-xs"></i></button>';
+    }
+    html += '</div></td></tr>';
+  });
+  html += '</tbody></table></div>';
+
+  html += '<div class="md:hidden divide-y">';
+  paged.forEach(function(u) {
+    var roleColor = u.role === 'admin' ? 'bg-navy-100 text-navy-700' : u.role === 'staff' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700';
+    html += '<div class="p-4 flex items-center gap-3">';
+    html += '<div class="w-10 h-10 rounded-xl bg-navy-100 flex items-center justify-center flex-shrink-0"><i class="fi fi-rr-user text-navy-600"></i></div>';
+    html += '<div class="flex-1 min-w-0"><p class="font-semibold text-gray-800 text-sm">' + escHtml(u.name || '-') + '</p>';
+    html += '<p class="text-xs text-gray-400">@' + escHtml(u.username) + '</p>';
+    html += '<div class="flex gap-1.5 mt-1"><span class="px-2 py-0.5 rounded-full text-xs ' + roleColor + '">' + (ROLE_LABELS[u.role] || u.role) + '</span>';
+    html += '<span class="px-2 py-0.5 rounded-full text-xs ' + (u.active !== false ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700') + '">' + (u.active !== false ? 'ใช้งาน' : 'ระงับ') + '</span></div></div>';
+    html += '<div class="flex gap-1">';
+    html += '<button onclick="openEditUserModal(\'' + u.id + '\')" class="w-8 h-8 bg-blue-100 text-blue-700 rounded-xl flex items-center justify-center"><i class="fi fi-rr-edit text-sm"></i></button>';
+    html += '<button onclick="doResetPassword(\'' + u.id + '\')" class="w-8 h-8 bg-amber-100 text-amber-700 rounded-xl flex items-center justify-center"><i class="fi fi-rr-lock text-sm"></i></button>';
+    html += '</div></div>';
+  });
+  html += '</div></div>';
+  html += '<div id="usersPagination"></div></div>';
+  
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
+  renderPagination('usersPagination', _usersData.length, _usersPage, function(p) { _usersPage = p; buildUsersPage(); });
+}
+
+function userFormHTML(user) {
+  user = user || {};
+  var roleOpts = ['admin', 'staff', 'employee'].map(function(r) { return '<option value="' + r + '"' + (user.role === r ? ' selected' : '') + '>' + (ROLE_LABELS[r] || r) + '</option>'; }).join('');
+  return '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'
+    + fieldHTML('ชื่อ-นามสกุล *', 'uName', 'text', user.name || '', 'sm:col-span-2')
+    + fieldHTML('Username *', 'uUsername', 'text', user.username || '')
+    + (!user.id ? '<div><label class="form-label">Password *</label><div class="relative"><input type="password" id="uPassword" class="form-input pr-10" placeholder="รหัสผ่าน"><button type="button" onclick="togglePass(\'uPassword\',this)" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"><i class="fi fi-rr-eye text-sm"></i></button></div></div>' : '')
+    + fieldHTML('อีเมล', 'uEmail', 'email', user.email || '')
+    + fieldHTML('เบอร์โทร', 'uPhone', 'text', user.phone || '')
+    + '<div><label class="form-label">บทบาท *</label><select id="uRole" class="form-input">' + roleOpts + '</select></div>'
+    + '</div>';
+}
+
+function openAddUserModal() {
+  var body   = userFormHTML({});
+  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
+    + '<button onclick="submitAddUser()" class="btn-primary"><i class="fi fi-rr-user-add mr-1"></i>เพิ่มผู้ใช้</button>';
+  openModal('เพิ่มผู้ใช้งานใหม่', body, footer);
+}
+
+function openEditUserModal(id) {
+  var u = _usersData.find(function(x) { return x.id === id; });
+  if (!u) return;
+  var body   = userFormHTML(u);
+  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
+    + '<button onclick="submitEditUser(\'' + id + '\')" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึก</button>';
+  openModal('แก้ไขผู้ใช้งาน: ' + u.name, body, footer);
+}
+
+function submitAddUser() {
+  var nameEl = document.getElementById('uName');
+  var userEl = document.getElementById('uUsername');
+  var passEl = document.getElementById('uPassword');
+  var emailEl = document.getElementById('uEmail');
+  var phoneEl = document.getElementById('uPhone');
+  var roleEl = document.getElementById('uRole');
+
+  var data = { 
+    name: nameEl ? nameEl.value : '', 
+    username: userEl ? userEl.value : '', 
+    password: passEl ? passEl.value : '', 
+    email: emailEl ? emailEl.value : '', 
+    phone: phoneEl ? phoneEl.value : '', 
+    role: roleEl ? roleEl.value : 'employee' 
+  };
+  
+  if (!data.name.trim() || !data.username.trim() || !data.password) { showError('กรุณากรอกข้อมูลที่จำเป็น'); return; }
+  showLoading('กำลังบันทึก...');
+  callAPI('addUser', AUTH.token, data).then(function(res) {
+    hideLoading(); closeModal();
+    if (res.success) { showSuccess(res.message); renderUsers(); }
+    else showError(res.message);
+  }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+}
+
+function submitEditUser(id) {
+  var nameEl = document.getElementById('uName');
+  var emailEl = document.getElementById('uEmail');
+  var phoneEl = document.getElementById('uPhone');
+  var roleEl = document.getElementById('uRole');
+
+  var data = { 
+    name: nameEl ? nameEl.value : '', 
+    email: emailEl ? emailEl.value : '', 
+    phone: phoneEl ? phoneEl.value : '', 
+    role: roleEl ? roleEl.value : 'employee', 
+    active: true 
+  };
+  
+  if (!data.name.trim()) { showError('กรุณากรอกชื่อ'); return; }
+  showLoading('กำลังบันทึก...');
+  callAPI('updateUser', AUTH.token, id, data).then(function(res) {
+    hideLoading(); closeModal();
+    if (res.success) { showSuccess(res.message); renderUsers(); }
+    else showError(res.message);
+  }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+}
+
+function doResetPassword(userId) {
+  showConfirm('Reset รหัสผ่าน', 'ระบบจะสร้างรหัสผ่านชั่วคราวใหม่', function() {
+    showLoading('กำลัง Reset...');
+    callAPI('resetUserPassword', AUTH.token, userId).then(function(res) {
+      hideLoading();
+      if (res.success) showSuccess(res.message);
+      else showError(res.message);
+    }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+  }, 'Reset Password');
+}
+
+function doToggleUser(userId, name) {
+  var user = _usersData.find(function(u) { return u.id === userId; });
+  var action = user && user.active !== false ? 'ระงับ' : 'เปิด';
+  showConfirm(action + 'บัญชีผู้ใช้', action + 'บัญชีของ "' + name + '" ใช่หรือไม่?', function() {
+    showLoading('กำลังดำเนินการ...');
+    callAPI('toggleUserActive', AUTH.token, userId).then(function(res) {
+      hideLoading();
+      if (res.success) { showSuccess(res.message); renderUsers(); }
+      else showError(res.message);
+    }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+  }, action + 'บัญชี');
+}
+
+// ===== ON LOAD =====
+window.onload = function() {
+  var urlParams = new URLSearchParams(window.location.search);
+  _QR_ACTION = urlParams.get('action') || '';
+  _QR_ITEM_ID = urlParams.get('item_id') || '';
+
+  // ตรวจสอบเซสชันผู้ใช้และเริ่มต้นแอปตามปกติ (ตัดส่วน Public Asset ออก)
+  callAPI('getConfig').then(function(res) {
+    if (res.success && res.data) {
+      var cfg = res.data;
+      var loginApp = document.getElementById('loginAppName');
+      var sideApp = document.getElementById('sidebarAppName');
+      if (cfg.app_name) {
+        if (loginApp) loginApp.textContent = cfg.app_name;
+        if (sideApp) sideApp.textContent = cfg.app_name;
+      }
+    }
+  }).catch(function() {}).finally(function() {
+    if (AUTH.token) { initApp(); }
+    else { showLoginPage(); }
+  });
+};
