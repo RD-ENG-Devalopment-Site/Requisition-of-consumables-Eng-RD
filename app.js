@@ -154,39 +154,44 @@ function setLoginRole(role) {
 }
 
 function doLogin() {
-  var usernameEl = document.getElementById('loginUsername');
-  var passwordEl = document.getElementById('loginPassword');
-  var roleEl = document.getElementById('loginRole');
-  
-  var username = usernameEl ? usernameEl.value.trim() : '';
-  var password = passwordEl ? passwordEl.value : '';
-  var role     = roleEl ? roleEl.value : '';
-  
-  if (!username || !password) { showError('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'); return; }
-  var btn = document.getElementById('btnLogin');
-  if (btn) {
-    btn.disabled = true; btn.innerHTML = '<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> กำลังเข้าสู่ระบบ...';
-  }
-  
-  callAPI('login', username, password, role).then(function(res) {
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-sign-in"></i> เข้าสู่ระบบ'; }
-    if (res.success) {
-      AUTH.set(res.token, res.user);
-      initApp();
-    } else { showError(res.message); }
-  }).catch(function(err) {
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-sign-in"></i> เข้าสู่ระบบ'; }
-    showError('ไม่สามารถเชื่อมต่อระบบได้');
-  });
-}
+  var usernameEl = document.getElementById('loginUsername');
+  var passwordEl = document.getElementById('loginPassword');
+  var roleEl = document.getElementById('loginRole');
+  
+  var username = usernameEl ? usernameEl.value.trim() : '';
+  var password = passwordEl ? passwordEl.value : '';
+  var role     = roleEl ? roleEl.value : '';
+  
+  if (!username || !password) { showError('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'); return; }
+  var btn = document.getElementById('btnLogin');
+  if (btn) {
+    btn.disabled = true; btn.innerHTML = '<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> กำลังเข้าสู่ระบบ...';
+  }
+  
+  callAPI('login', username, password, role).then(function(res) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-sign-in"></i> เข้าสู่ระบบ'; }
+    if (res.success) {
+      AUTH.set(res.token, res.user);
+      initApp();
+    } else { showError(res.message); }
+  }).catch(function(err) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fi fi-rr-sign-in"></i> เข้าสู่ระบบ'; }
+    showError('ไม่สามารถเชื่อมต่อระบบได้');
+  });
+} // 🟢 เพิ่มปีกกาปิดตัวนี้ เพื่อจบฟังก์ชัน doLogin อย่างถูกต้อง
 
 function doLogout() {
-  showConfirm('ออกจากระบบ', 'ต้องการออกจากระบบใช่หรือไม่?', function() {
-    showLoading('กำลังออกจากระบบ...');
-    callAPI('logout', AUTH.token).then(function() {
-      AUTH.clear(); location.reload();
-    });
-  }, 'ออกจากระบบ');
+  showConfirm('ออกจากระบบ', 'ต้องการออกจากระบบใช่หรือไม่?', function() {
+    showLoading('กำลังออกจากระบบ...');
+    callAPI('logout', AUTH.token).then(function() {
+      AUTH.clear(); 
+      location.reload(); // บังคับล้างสถานะและส่งกลับหน้า Login ทันที
+    }).catch(function() {
+      // กรณีเน็ตหลุดหรือติดต่อเซิร์ฟเวอร์ไม่ได้ ก็ต้องบังคับล้างในเครื่องทิ้ง
+      AUTH.clear();
+      location.reload();
+    });
+  }, 'ออกจากระบบ');
 }
 
 function showForgotModal()  { var el = document.getElementById('forgotModal'); if (el) el.classList.remove('hidden'); }
