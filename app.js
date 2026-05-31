@@ -142,15 +142,8 @@ function renderPagination(containerId, total, currentPage, onPageClick) {
 
 // ===== LOGIN =====
 function setLoginRole(role) {
-  var roleInput = document.getElementById('loginRole');
-  if (roleInput) roleInput.value = role;
-  
-  ['admin', 'staff', 'employee'].forEach(function(r) {
-    var tab = document.getElementById('tab' + r.charAt(0).toUpperCase() + r.slice(1));
-    if (!tab) return;
-    if (r === role) { tab.className = 'role-tab active-tab flex-1 py-3.5 text-sm font-semibold text-center transition-all border-b-2'; }
-    else            { tab.className = 'role-tab flex-1 py-3.5 text-sm font-semibold text-center transition-all border-b-2 border-transparent text-gray-400 hover:text-gray-600'; }
-  });
+  var roleInput = document.getElementById('loginRole');
+  if (roleInput) roleInput.value = role || '';
 }
 
 function doLogin() {
