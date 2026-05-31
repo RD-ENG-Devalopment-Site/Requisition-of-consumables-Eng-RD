@@ -32,7 +32,7 @@
 
     // Config
     _set('config', {
-      app_name:'ระบบวัสดุสิ้นเปลือง',
+      app_name:'Requisition of consumables (Eng-RD) System',
       organization_name:'หน่วยงานตัวอย่าง',
       organization_address:'123 ถนนตัวอย่าง',
       organization_phone:'042-111-111',
