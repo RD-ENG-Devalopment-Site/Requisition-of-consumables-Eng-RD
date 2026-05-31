@@ -6,31 +6,31 @@
   <title>Requisition of consumables (Eng-RD) System</title>
   <link rel="preload" href="https://cdn-uicons.flaticon.com/2.1.0/uicons-regular-rounded/css/uicons-regular-rounded.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link rel="stylesheet" href="https://cdn-uicons.flaticon.com/2.1.0/uicons-regular-rounded/css/uicons-regular-rounded.css"></noscript>
-  <link rel="stylesheet" href="styles.css?v=13">
+  <link rel="stylesheet" href="styles.css?v=14">
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 font-sans">
 
-<!-- ========== LOGIN PAGE ========== -->
 <div id="loginPage" class="min-h-screen flex items-center justify-center p-4" style="background:linear-gradient(135deg, #051030 0%, #091d5c 50%, #0e2a8a 100%)">
   <div class="w-full max-w-md">
-    <!-- Logo Card -->
     <div class="text-center mb-8">
       <div class="inline-flex items-center justify-center w-20 h-20 bg-white rounded-2xl shadow-xl mb-4 overflow-hidden p-1">
         <i class="fi fi-rr-box-alt text-4xl text-navy-800" id="loginLogoIcon"></i>
-        <img id="loginLogoImg" src="" class="w-full h-full object-contain hidden" alt="ระบบวัสดุสิ้นเปลือง">
+        <img id="loginLogoImg" src="" class="w-full h-full object-contain hidden" alt="Requisition of consumables (Eng-RD) System">
       </div>
       <h1 id="loginAppName" class="text-2xl font-bold text-white">Requisition of consumables (Eng-RD) System</h1>
       <p class="text-blue-200 text-sm mt-1">กรุณาเข้าสู่ระบบเพื่อดำเนินการ</p>
     </div>
 
-    <!-- Login Card -->
     <div class="bg-white rounded-2xl shadow-2xl overflow-hidden">
-      <!-- Role Tabs -->
       <div class="flex border-b">
         <button onclick="setLoginRole('admin')" id="tabAdmin"
           class="role-tab flex-1 py-3.5 text-sm font-semibold text-center transition-all border-b-2 border-navy-700 text-navy-700">
           <i class="fi fi-rr-shield-check mr-1"></i> ผู้ดูแลระบบ
+        </button>
+        <button onclick="setLoginRole('staff')" id="tabStaff"
+          class="role-tab flex-1 py-3.5 text-sm font-semibold text-center transition-all border-b-2 border-transparent text-gray-400 hover:text-gray-600">
+          <i class="fi fi-rr-user-gear mr-1"></i> เจ้าหน้าที่
         </button>
         <button onclick="setLoginRole('employee')" id="tabEmployee"
           class="role-tab flex-1 py-3.5 text-sm font-semibold text-center transition-all border-b-2 border-transparent text-gray-400 hover:text-gray-600">
@@ -38,7 +38,6 @@
         </button>
       </div>
 
-      <!-- Form -->
       <div class="p-7">
         <input type="hidden" id="loginRole" value="admin">
         <div class="space-y-4">
@@ -78,18 +77,15 @@
   </div>
 </div>
 
-<!-- ========== MAIN SHELL (hidden until login) ========== -->
 <div id="mainShell" class="hidden">
 
-  <!-- Sidebar -->
   <aside id="sidebar" class="fixed left-0 top-0 h-full w-60 bg-navy-800 text-white flex flex-col z-40 transition-transform duration-300 shadow-2xl">
 
-    <!-- Logo -->
     <div class="p-4 border-b border-navy-700">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow flex-shrink-0 overflow-hidden p-0.5">
           <i class="fi fi-rr-box-alt text-navy-800 text-lg" id="sidebarLogoIcon"></i>
-          <img id="sidebarLogoImg" src="" class="w-full h-full object-contain hidden" alt="ระบบวัสดุสิ้นเปลือง">
+          <img id="sidebarLogoImg" src="" class="w-full h-full object-contain hidden" alt="Requisition of consumables (Eng-RD) System">
         </div>
         <div class="min-w-0">
           <p id="sidebarAppName" class="font-bold text-sm leading-tight truncate">Requisition of consumables (Eng-RD) System</p>
@@ -97,10 +93,8 @@
       </div>
     </div>
 
-    <!-- Navigation -->
     <nav class="flex-1 overflow-y-auto py-3 px-2 scrollbar-hide">
 
-      <!-- หลัก -->
       <div class="menu-group" data-section="main">
         <button class="menu-group-header" onclick="toggleMenuSection('main')">
           <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider">หลัก</span>
@@ -125,7 +119,6 @@
         </div>
       </div>
 
-      <!-- คลังวัสดุ -->
       <div class="menu-group" data-section="inventory" id="menuInventorySection">
         <button class="menu-group-header" onclick="toggleMenuSection('inventory')">
           <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider">คลังวัสดุ</span>
@@ -161,7 +154,6 @@
         </div>
       </div>
 
-      <!-- การเบิก -->
       <div class="menu-group" data-section="withdraw">
         <button class="menu-group-header" onclick="toggleMenuSection('withdraw')">
           <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider">การเบิก</span>
@@ -193,7 +185,6 @@
         </div>
       </div>
 
-      <!-- รายงาน -->
       <div class="menu-group" data-section="report" id="menuReportSectionWrap">
         <button class="menu-group-header" onclick="toggleMenuSection('report')">
           <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider" id="menuReportLabel">รายงาน</span>
@@ -211,7 +202,6 @@
         </div>
       </div>
 
-      <!-- ทะเบียนครุภัณฑ์ -->
       <div class="menu-group" data-section="asset" id="menuAssetSection">
         <button class="menu-group-header" onclick="toggleMenuSection('asset')">
           <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider">ทะเบียนครุภัณฑ์</span>
@@ -259,7 +249,6 @@
         </div>
       </div>
 
-      <!-- รายงานครุภัณฑ์ -->
       <div class="menu-group" data-section="assetreport" id="menuAssetReportSection">
         <button class="menu-group-header" onclick="toggleMenuSection('assetreport')">
           <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider">รายงานครุภัณฑ์</span>
@@ -277,7 +266,6 @@
         </div>
       </div>
 
-      <!-- คู่มือ -->
       <div class="menu-group" data-section="manual">
         <button class="menu-group-header" onclick="toggleMenuSection('manual')">
           <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider">คู่มือ</span>
@@ -295,7 +283,6 @@
         </div>
       </div>
 
-      <!-- ตั้งค่าระบบ -->
       <div class="menu-group" data-section="admin" id="menuAdminSection">
         <button class="menu-group-header" onclick="toggleMenuSection('admin')">
           <span class="text-blue-400 text-xs font-semibold uppercase tracking-wider">ตั้งค่าระบบ</span>
@@ -320,7 +307,6 @@
       </div>
     </nav>
 
-    <!-- User Info -->
     <div class="p-3 border-t border-navy-700">
       <div class="flex items-center gap-3 p-2 rounded-xl hover:bg-navy-700 cursor-pointer transition" onclick="loadPage('profile')">
         <div id="sidebarAvatar" class="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
@@ -337,13 +323,10 @@
     </div>
   </aside>
 
-  <!-- Mobile sidebar overlay -->
   <div id="sidebarOverlay" class="fixed inset-0 bg-black/50 z-30 hidden lg:hidden" onclick="toggleSidebar()"></div>
 
-  <!-- Main Content Area -->
   <main class="lg:ml-60 min-h-screen bg-gray-50 flex flex-col">
 
-    <!-- Top Bar -->
     <header id="topbar" class="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 lg:px-6 py-3 flex items-center justify-between shadow-sm">
       <div class="flex items-center gap-3 flex-1 min-w-0">
         <button class="lg:hidden text-gray-500 hover:text-gray-700" onclick="toggleSidebar()">
@@ -351,9 +334,8 @@
         </button>
         <div class="hidden sm:block">
           <h2 id="pageTitle" class="font-bold text-gray-800 text-base">ภาพรวมระบบ</h2>
-          <p id="pageBreadcrumb" class="text-xs text-gray-400 hidden lg:block">ระบบวัสดุสิ้นเปลือง / ภาพรวมระบบ</p>
+          <p id="pageBreadcrumb" class="text-xs text-gray-400 hidden lg:block">Requisition of consumables (Eng-RD) System / ภาพรวมระบบ</p>
         </div>
-        <!-- Global Search -->
         <div class="relative flex-1 max-w-md ml-2">
           <i class="fi fi-rr-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
           <input type="text" id="globalSearch" placeholder="ค้นหาวัสดุเร็ว..." onkeyup="debounceGlobalSearch()" class="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-500 bg-gray-50">
@@ -368,17 +350,12 @@
       </div>
     </header>
 
-    <!-- Page Content -->
     <div id="mainContent" class="flex-1 p-4 lg:p-6">
-      <!-- โหลดจาก JS -->
-    </div>
+      </div>
   </main>
 
 </div>
 
-<!-- ========== GLOBAL MODALS ========== -->
-
-<!-- Modal Container -->
 <div id="modalOverlay" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4" onclick="if(event.target===this)closeModal()">
   <div id="modalBox" class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
     <div class="flex items-center justify-between px-6 py-4 border-b flex-shrink-0">
@@ -392,7 +369,6 @@
   </div>
 </div>
 
-<!-- Forgot Password Modal -->
 <div id="forgotModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
   <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
     <h3 class="font-bold text-gray-800 mb-1">ลืมรหัสผ่าน</h3>
@@ -406,7 +382,6 @@
   </div>
 </div>
 
-<!-- Loading Overlay -->
 <div id="loadingOverlay" class="fixed inset-0 bg-black/40 z-[60] hidden flex items-center justify-center">
   <div class="bg-white rounded-2xl px-8 py-6 flex items-center gap-4 shadow-2xl">
     <div class="w-8 h-8 border-4 border-navy-600 border-t-transparent rounded-full animate-spin"></div>
@@ -419,9 +394,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
-<script src="api.js?v=3"></script>
+<script src="api.js?v=4"></script>
 <script src="mock-api.js"></script>
-<script src="app.js?v=33"></script>
+<script src="app.js?v=34"></script>
 <script>
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(function(){});
