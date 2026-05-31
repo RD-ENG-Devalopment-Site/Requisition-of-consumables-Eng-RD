@@ -279,7 +279,7 @@ function loadPage(page) {
     dashboard: 'ภาพรายงานระบบ', stock: 'สต็อกคงเหลือ', items: 'รายการวัสดุ',
     receive: 'รับวัสดุเข้าคลัง', stocktake: 'นับสต็อก', printqr: 'พิมพ์ QR สติ๊กเกอร์', withdraw: 'เบิกวัสดุ', approve: 'อนุมัติการเบิก',
     transactions: 'ประวัติเคลื่อนไหว', reports: 'รายงาน',
-    users: 'จัดการผู้ใช้งาน', profile: 'โปรไฟล์', manual: 'คู่มือการใช้งาน'
+    users: 'จัดการผู้ใช้งาน', profile: 'โปรไฟล์',
   };
   
   var pageTitleEl = document.getElementById('pageTitle');
@@ -309,7 +309,6 @@ function loadPage(page) {
   else if (page === 'reports')   renderReports();
   else if (page === 'users')     renderUsers();
   else if (page === 'profile')   renderProfile();
-  else if (page === 'manual')    renderManual();
 }
 
 function toggleSidebar() {
@@ -336,24 +335,6 @@ function initMenuSections() {
     else group.classList.remove('collapsed');
   });
 }
-
-function renderManual() {
-  function mCard(num, icon, iconBg, title, items) {
-    var h = '<div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">';
-    h += '<div class="flex items-center gap-3 px-5 py-4 border-b border-gray-100">';
-    h += '<div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ' + iconBg + '">';
-    h += '<i class="' + icon + ' text-white text-base"></i></div>';
-    h += '<div><span class="text-xs text-gray-400 font-medium">ขั้นตอนที่ ' + num + '</span>';
-    h += '<h4 class="text-sm font-bold text-gray-800 leading-tight">' + title + '</h4></div></div>';
-    h += '<ul class="px-5 py-4 space-y-2.5">';
-    items.forEach(function(item) {
-      h += '<li class="flex items-start gap-2.5 text-sm text-gray-600">';
-      h += '<span class="mt-1 w-1.5 h-1.5 rounded-full bg-navy-400 flex-shrink-0"></span>';
-      h += '<span>' + item + '</span></li>';
-    });
-    h += '</ul></div>';
-    return h;
-  }
 
   var sections = [
     { num: 1, icon: 'fi fi-rr-sign-in', bg: 'bg-blue-500', title: 'การเข้าสู่ระบบ', items: [
