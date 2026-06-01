@@ -2,10 +2,12 @@
 // API Client — Google Apps Script Backend
 // ============================================================
 
+// ⚠️ สำคัญมาก: ตรวจสอบให้มั่นใจว่ารหัสภายในลิงก์นี้ตรงกับ URL Web App ปัจจุบันของคุณหลังกด Deploy
 var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxvhgwoyvg3oAsCgevhHfH_YCtxkFLTIUBGlO3hc_Cki2G2X_TtCiDSaM6_roGrC5yb3A/exec';
 
 function callAPI(fnName) {
   var args = Array.prototype.slice.call(arguments, 1);
+  
   // uploadFile ใช้ POST เพราะ base64 ใหญ่เกิน URL length limit
   if (fnName === 'uploadFile') {
     var body = 'fn=' + encodeURIComponent(fnName) + '&args=' + encodeURIComponent(JSON.stringify(args));
@@ -33,7 +35,7 @@ function callAPI(fnName) {
   }).then(function(data) {
     console.log('[API] Data', data);
     
-    // 🟢 ตัวป้องกันความปลอดภัย: ตรวจสอบและซ่อมแซมโครงสร้างก้อนข้อมูล JSON ก่อนส่งไปให้ app.js ใช้งาน
+    // ตัวป้องกันความปลอดภัย: ตรวจสอบและซ่อมแซมโครงสร้างก้อนข้อมูล JSON ก่อนส่งไปให้ app.js ใช้งาน
     if (data && typeof data === 'object' && data !== null) {
       if (!data.hasOwnProperty('data')) {
         return { success: true, data: data };
