@@ -1255,169 +1255,173 @@ var _receiveData = [];
 var _receivePage = 1;
 
 function renderReceive() {
-  showLoading('โหลดข้อมูลรับเข้า...');
-  var itemsPromise = (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL)
-    ? Promise.resolve({ success: true, data: _itemsData })
-    : callAPI('getItems', AUTH.token).then(function(res) { _itemsData = res.data || []; _itemsCacheTime = Date.now(); return res; });
-  Promise.all([ itemsPromise, callAPI('getReceives', AUTH.token, {}) ]).then(function(results) {
-    hideLoading();
-    _itemsData   = results[0].data || [];
-    _receiveData = results[1].data || [];
-    _receivePage = 1;
-    buildReceivePage();
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  showLoading('โหลดข้อมูลรับเข้า...');
+  var itemsPromise = (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL)
+    ? Promise.resolve({ success: true, data: _itemsData })
+    : callAPI('getItems', AUTH.token).then(function(res) { _itemsData = res.data || []; _itemsCacheTime = Date.now(); return res; });
+  Promise.all([ itemsPromise, callAPI('getReceives', AUTH.token, {}) ]).then(function(results) {
+    hideLoading();
+    _itemsData   = results[0].data || [];
+    _receiveData = results[1].data || [];
+    _receivePage = 1;
+    buildReceivePage();
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
 function buildReceivePage() {
-  var paged = paginate(_receiveData, _receivePage);
-  var html = '<div class="fade-in space-y-4">';
-  html += '<div class="flex items-center justify-between">';
-  html += '<h3 class="font-semibold text-gray-700">ประวัติรับวัสดุเข้าคลัง</h3>';
-  html += '<button onclick="openReceiveModal(null)" class="btn-primary flex items-center gap-2"><i class="fi fi-rr-plus"></i> บันทึกรับเข้า</button></div>';
+  var paged = paginate(_receiveData, _receivePage);
+  var html = '<div class="fade-in space-y-4">';
+  html += '<div class="flex items-center justify-between">';
+  html += '<h3 class="font-semibold text-gray-700">ประวัติรับวัสดุเข้าคลัง</h3>';
+  html += '<button onclick="openReceiveModal(null)" class="btn-primary flex items-center gap-2"><i class="fi fi-rr-plus"></i> บันทึกรับเข้า</button></div>';
 
-  html += '<div class="card overflow-hidden"><div class="overflow-x-auto">';
-  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
-  html += '<tr><th class="px-4 py-3 text-left">เลขที่รับ</th><th class="px-4 py-3 text-left">วันที่</th>';
-  html += '<th class="px-4 py-3 text-left">รายการ</th><th class="px-4 py-3 text-center">จำนวน</th>';
-  html += '<th class="px-4 py-3 text-left">ผู้รับ</th><th class="px-4 py-3 text-left">หมายเหตุ</th></tr></thead>';
-  html += '<tbody class="divide-y divide-gray-100">';
-  if (paged.length === 0) html += '<tr><td colspan="6" class="text-center py-10 text-gray-400">ยังไม่มีรายการรับเข้า</td></tr>';
-  rannedRows(paged);
-  
-  function rannedRows(rows) {
-    rows.forEach(function(r) {
-      html += '<tr><td class="px-4 py-2.5 font-mono text-xs text-navy-700">' + escHtml(r.receive_no) + '</td>';
-      html += '<td class="px-4 py-2.5 text-xs text-gray-600">' + formatDate(r.date) + '</td>';
-      html += '<td class="px-4 py-2.5 font-medium text-gray-700">' + escHtml(r.item_name || '-') + '</td>';
-      html += '<td class="px-4 py-2.5 text-center font-bold text-blue-700">+' + r.quantity + ' ' + escHtml(r.unit || '') + '</td>';
-      html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(r.received_by_name || '-') + '</td>';
-      html += '<td class="px-4 py-2.5 text-xs text-gray-400">' + escHtml(r.note || '-') + '</td></tr>';
-    });
-  }
-  
-  html += '</tbody></table></div></div>';
-  html += '<div id="receivePagination"></div></div>';
-  
-  var contentEl = document.getElementById('mainContent');
-  if (contentEl) contentEl.innerHTML = html;
-  renderPagination('receivePagination', _receiveData.length, _receivePage, function(p) { _receivePage = p; buildReceivePage(); });
+  html += '<div class="card overflow-hidden"><div class="overflow-x-auto">';
+  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
+  html += '<tr><th class="px-4 py-3 text-left">เลขที่รับ</th><th class="px-4 py-3 text-left">วันที่</th>';
+  html += '<th class="px-4 py-3 text-left">รายการ</th><th class="px-4 py-3 text-center">จำนวน</th>';
+  html += '<th class="px-4 py-3 text-left">ผู้รับ</th><th class="px-4 py-3 text-left">หมายเหตุ</th></tr></thead>';
+  html += '<tbody class="divide-y divide-gray-100">';
+  if (paged.length === 0) html += '<tr><td colspan="6" class="text-center py-10 text-gray-400">ยังไม่มีรายการรับเข้า</td></tr>';
+  rannedRows(paged);
+  
+  function rannedRows(rows) {
+    rows.forEach(function(r) {
+      html += '<tr><td class="px-4 py-2.5 font-mono text-xs text-navy-700">' + escHtml(r.receive_no) + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-600">' + formatDate(r.date) + '</td>';
+      html += '<td class="px-4 py-2.5 font-medium text-gray-700">' + escHtml(r.item_name || '-') + '</td>';
+      html += '<td class="px-4 py-2.5 text-center font-bold text-blue-700">+' + r.quantity + ' ' + escHtml(r.unit || '') + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(r.received_by_name || '-') + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-400">' + escHtml(r.note || '-') + '</td></tr>';
+    });
+  }
+  
+  html += '</tbody></table></div></div>';
+  html += '<div id="receivePagination"></div></div>';
+  
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
+  renderPagination('receivePagination', _receiveData.length, _receivePage, function(p) { _receivePage = p; buildReceivePage(); });
 }
 
 function openReceiveModal(itemId) {
-  var body = '<div class="space-y-4">';
-  if (!itemId) {
-    body += '<div><label class="form-label">เลือกวัสดุ *</label><select id="recItemId" class="form-input">';
-    _itemsData.forEach(function(i) { body += '<option value="' + i.id + '">' + escHtml(i.name) + ' (คงเหลือ ' + i.current_stock + ' ' + i.unit + ')</option>'; });
-    body += '</select></div>';
-  } else {
-    var item = _itemsData.find(function(i) { return i.id === itemId; });
-    body += '<input type="hidden" id="recItemId" value="' + itemId + '">';
-    body += '<p class="text-sm text-gray-600">รายการ: <b>' + escHtml(item.name) + '</b> (คงเหลือ ' + item.current_stock + ' ' + item.unit + ')</p>';
-  }
-  body += fieldHTML('จำนวนที่รับ *', 'recQty', 'number', 1);
-  body += fieldHTML('วันที่', 'recDate', 'date', new Date().toISOString().split('T')[0]);
-  body += '<div class="sm:col-span-2"><label class="form-label">หมายเหตุ</label><textarea id="recNote" class="form-input" rows="2"></textarea></div>';
-  body += '</div>';
-  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
-    + '<button onclick="submitReceive()" class="btn-success"><i class="fi fi-rr-inbox-in mr-1"></i>บันทึกรับเข้า</button>';
-  openModal('รับวัสดุเข้าคลัง', body, footer);
+  var body = '<div class="space-y-4">';
+  if (!itemId) {
+    body += '<div><label class="form-label">เลือกวัสดุ *</label><select id="recItemId" class="form-input">';
+    _itemsData.forEach(function(i) { body += '<option value="' + i.id + '">' + escHtml(i.name) + ' (คงเหลือ ' + i.current_stock + ' ' + i.unit + ')</option>'; });
+    body += '</select></div>';
+  } else {
+    var item = _itemsData.find(function(i) { return i.id === itemId; });
+    body += '<input type="hidden" id="recItemId" value="' + itemId + '">';
+    body += '<p class="text-sm text-gray-600">รายการ: <b>' + escHtml(item.name) + '</b> (คงเหลือ ' + item.current_stock + ' ' + item.unit + ')</p>';
+  }
+  body += fieldHTML('จำนวนที่รับ *', 'recQty', 'number', 1);
+  body += fieldHTML('วันที่', 'recDate', 'date', new Date().toISOString().split('T')[0]);
+  body += '<div class="sm:col-span-2"><label class="form-label">หมายเหตุ</label><textarea id="recNote" class="form-input" rows="2"></textarea></div>';
+  body += '</div>';
+  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
+    + '<button onclick="submitReceive()" class="btn-success"><i class="fi fi-rr-inbox-in mr-1"></i>บันทึกรับเข้า</button>';
+  openModal('รับวัสดุเข้าคลัง', body, footer);
 }
 
 function submitReceive() {
-  var itemEl = document.getElementById('recItemId');
-  var qtyEl = document.getElementById('recQty');
-  var dateEl = document.getElementById('recDate');
-  var noteEl = document.getElementById('recNote');
-  
-  var itemId = itemEl ? itemEl.value : '';
-  var qty    = qtyEl ? parseInt(qtyEl.value) || 0 : 0;
-  var date   = dateEl ? dateEl.value : '';
-  var note   = noteEl ? noteEl.value : '';
-  
-  if (!itemId) { showError('กรุณาเลือกวัสดุ'); return; }
-  if (!qty || qty <= 0) { showError('จำนวนไม่ถูกต้อง'); return; }
-  showLoading('กำลังบันทึก...');
-  callAPI('addReceive', AUTH.token, { item_id: itemId, quantity: qty, date: date, note: note }).then(function(res) {
-    hideLoading(); closeModal();
-    if (res.success) { showSuccess(res.message); renderReceive(); }
-    else showError(res.message);
-  }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+  var itemEl = document.getElementById('recItemId');
+  var qtyEl = document.getElementById('recQty');
+  var dateEl = document.getElementById('recDate');
+  var noteEl = document.getElementById('recNote');
+  
+  var itemId = itemEl ? itemEl.value : '';
+  var qty    = qtyEl ? parseInt(qtyEl.value) || 0 : 0;
+  var date   = dateEl ? dateEl.value : '';
+  var note   = noteEl ? noteEl.value : '';
+  
+  if (!itemId) { showError('กรุณาเลือกวัสดุ'); return; }
+  if (!qty || qty <= 0) { showError('จำนวนไม่ถูกต้อง'); return; }
+  showLoading('กำลังบันทึก...');
+  callAPI('addReceive', AUTH.token, { item_id: itemId, quantity: qty, date: date, note: note }).then(function(res) {
+    hideLoading(); closeModal();
+    if (res.success) { showSuccess(res.message); renderReceive(); }
+    else showError(res.message);
+  }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
 }
 
 // ===== STOCKTAKE =====
 function renderStocktake() {
-  showLoading('โหลดข้อมูล...');
-  var itemsPromise = (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL)
-    ? Promise.resolve({ success: true, data: _itemsData })
-    : callAPI('getItems', AUTH.token).then(function(res) { _itemsData = res.data || []; _itemsCacheTime = Date.now(); return res; });
-  itemsPromise.then(function(res) {
-    hideLoading();
-    _itemsData = res.data || [];
-    buildStocktakePage();
-  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+  showLoading('โหลดข้อมูล...');
+  var itemsPromise = (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL)
+    ? Promise.resolve({ success: true, data: _itemsData })
+    : callAPI('getItems', AUTH.token).then(function(res) { _itemsData = res.data || []; _itemsCacheTime = Date.now(); return res; });
+  itemsPromise.then(function(res) {
+    hideLoading();
+    _itemsData = res.data || [];
+    buildStocktakePage();
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
 function buildStocktakePage() {
-  var html = '<div class="fade-in space-y-4">';
-  html += '<div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">';
-  html += '<h3 class="font-semibold text-gray-700"><i class="fi fi-rr-clipboard-list text-navy-600 mr-2"></i>นับสต็อก</h3>';
-  html += '<button onclick="submitStocktake()" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึกการปรับยอด</button></div>';
-  html += '<p class="text-xs text-gray-500">กรอกจำนวนที่นับได้จริงในช่อง "นับจริง" แล้วกดบันทึก ระบบจะปรับยอดให้อัตโนมัติ</p>';
-  html += '<div class="card overflow-hidden"><div class="overflow-x-auto">';
-  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-gray-600 text-xs">';
-  html += '<tr><th class="px-4 py-3 text-left">รหัส/ชื่อ</th><th class="px-4 py-3 text-center">ระบบ</th><th class="px-4 py-3 text-center">นับจริง</th><th class="px-4 py-3 text-center">ผลต่าง</th></tr></thead>';
-  html += '<tbody class="divide-y divide-gray-100">';
-  _itemsData.forEach(function(item) {
-    html += '<tr data-st-id="' + item.id + '"><td class="px-4 py-3"><p class="font-medium text-gray-800">' + escHtml(item.name) + '</p><p class="text-xs text-gray-500">' + escHtml(item.item_code) + ' • ' + escHtml(item.unit) + '</p></td>';
-    html += '<td class="px-4 py-3 text-center font-bold text-gray-800">' + item.current_stock + '</td>';
-    html += '<td class="px-4 py-3 text-center"><input type="number" class="st-count w-20 border border-gray-300 rounded-lg px-2 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-navy-500" data-id="' + item.id + '" value="' + item.current_stock + '"></td>';
-    html += '<td class="px-4 py-3 text-center"><span class="st-diff text-xs font-medium" data-sys="' + item.current_stock + '">-</span></td></tr>';
-  });
-  html += '</tbody></table></div></div></div>';
-  
-  var contentEl = document.getElementById('mainContent');
-  if (contentEl) contentEl.innerHTML = html;
-  
-  document.querySelectorAll('.st-count').forEach(function(inp) {
-    inp.addEventListener('input', function() {
-      var row = inp.closest('tr');
-      if (!row) return;
-      var diffEl = row.querySelector('.st-diff');
-      if (!diffEl) return;
-      
-      var sys = parseInt(diffEl.getAttribute('data-sys')) || 0;
-      var act = parseInt(inp.value) || 0;
-      var diff = act - sys;
-      if (diff === 0) { diffEl.textContent = '-'; diffEl.className = 'st-diff text-xs font-medium text-gray-400'; }
-      else if (diff > 0) { diffEl.textContent = '+' + diff; diffEl.className = 'st-diff text-xs font-medium text-green-600'; }
-      else { diffEl.textContent = '' + diff; diffEl.className = 'st-diff text-xs font-medium text-red-600'; }
-    });
-  });
+  var html = '<div class="fade-in space-y-4">';
+  html += '<div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">';
+  html += '<h3 class="font-semibold text-gray-700"><i class="fi fi-rr-clipboard-list text-navy-600 mr-2"></i>นับสต็อก</h3>';
+  html += '<button onclick="submitStocktake()" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึกการปรับยอด</button></div>';
+  html += '<p class="text-xs text-gray-500">กรอกจำนวนที่นับได้จริงในช่อง "นับจริง" แล้วกดบันทึก ระบบจะปรับยอดให้อัตโนมัติ</p>';
+  html += '<div class="card overflow-hidden"><div class="overflow-x-auto">';
+  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-gray-600 text-xs">';
+  html += '<tr><th class="px-4 py-3 text-left">รหัส/ชื่อ</th><th class="px-4 py-3 text-center">ระบบ</th><th class="px-4 py-3 text-center">นับจริง</th><th class="px-4 py-3 text-center">ผลต่าง</th></tr></thead>';
+  html += '<tbody class="divide-y divide-gray-100">';
+  _itemsData.forEach(function(item) {
+    html += '<tr data-st-id="' + item.id + '"><td class="px-4 py-3"><p class="font-medium text-gray-800">' + escHtml(item.name) + '</p><p class="text-xs text-gray-500">' + escHtml(item.item_code) + ' • ' + escHtml(item.unit) + '</p></td>';
+    html += '<td class="px-4 py-3 text-center font-bold text-gray-800">' + item.current_stock + '</td>';
+    // 🟢 ซ่อม UI: เพิ่ม data-sys มารองรับที่ช่อง input โดยตรงเพื่อให้ลอจิกหยิบไปประมวลผลคำนวณผลต่างได้แม่นยำ
+    html += '<td class="px-4 py-3 text-center"><input type="number" class="st-count w-20 border border-gray-300 rounded-lg px-2 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-navy-500" data-id="' + item.id + '" data-sys="' + item.current_stock + '" value="' + item.current_stock + '"></td>';
+    html += '<td class="px-4 py-3 text-center"><span class="st-diff text-xs font-medium">-</span></td></tr>';
+  });
+  html += '</tbody></table></div></div></div>';
+  
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
+  
+  // ฟังก์ชั่นคำนวณผลต่างแบบเรียลไทม์ (Real-time Calculator)
+  function calculateRowDiff(inp) {
+    var row = inp.closest('tr');
+    if (!row) return;
+    var diffEl = row.querySelector('.st-diff');
+    if (!diffEl) return;
+    
+    var sys = parseInt(inp.getAttribute('data-sys')) || 0;
+    var act = parseInt(inp.value) || 0;
+    var diff = act - sys;
+    
+    if (diff === 0) { diffEl.textContent = '-'; diffEl.className = 'st-diff text-xs font-medium text-gray-400'; }
+    else if (diff > 0) { diffEl.textContent = '+' + diff; diffEl.className = 'st-diff text-xs font-medium text-green-600'; }
+    else { diffEl.textContent = '' + diff; diffEl.className = 'st-diff text-xs font-medium text-red-600'; }
+  }
+
+  document.querySelectorAll('.st-count').forEach(function(inp) {
+    // 🟢 ซ่อม UI: สั่งให้ผูก Event คอยคำนวณค่าเมื่อมีการเปลี่ยนแปลงตัวเลขในช่องนับจริง
+    inp.addEventListener('input', function() { calculateRowDiff(inp); });
+    // 🟢 ซ่อม UI: กระตุ้นการคำนวณผลลัพธ์รอบแรกสุดทันทีตั้งแต่เปิดหน้าแอปพลิเคชัน
+    calculateRowDiff(inp); 
+  });
+} 
+
 function submitStocktake() {
   var inputs = document.querySelectorAll('.st-count');
   var adjustments = [];
   
   inputs.forEach(function(inp) {
-    var row = inp.closest('tr');
-    if (!row) return;
-    var diffEl = row.querySelector('.st-diff');
-    var sys = diffEl ? parseInt(diffEl.getAttribute('data-sys')) || 0 : 0;
+    var sys = parseInt(inp.getAttribute('data-sys')) || 0;
     var act = parseInt(inp.value) || 0;
     
     // หากยอดนับจริงไม่ตรงกับระบบ ให้เตรียมข้อมูลปรับยอด
     if (act !== sys) {
       var itemId = inp.getAttribute('data-id');
-      // 🟢 ดึงข้อมูลเดิมของวัสดุชิ้นนี้จากอาร์เรย์หลักมาเตรียมไว้
       var originalItem = _itemsData.find(function(i) { return i.id === itemId; });
       
       if (originalItem) {
-        // สร้างก้อน Object ใหม่ที่คัดลอกค่าเดิมมาทั้งหมด แต่เปลี่ยนแค่สต็อกที่นับได้จริง
         var updatedData = Object.assign({}, originalItem, {
           current_stock: act,
           updated_at: new Date().toISOString()
         });
         
-        // ถอด ID ออกเพราะระบบใช้ ID แยกเป็น Parameter อยู่แล้วในการอัปเดต
         delete updatedData.id; 
         
         adjustments.push({ 
@@ -1427,29 +1431,36 @@ function submitStocktake() {
       }
     }
   });
+
+  if (adjustments.length === 0) { 
+    showError('ไม่มีรายการที่ต้องปรับยอด'); 
+    return; 
+  }
   
-  if (adjustments.length === 0) { showError('ไม่มีรายการที่ต้องปรับยอด'); return; }
-  
+  // เรียกใช้กล่องข้อความยืนยันดีไซน์โมเดิร์นของระบบคุณ
   showConfirm('ยืนยันปรับยอด', 'มี ' + adjustments.length + ' รายการที่ต้องปรับยอด ยืนยัน?', function() {
-    showLoading('กำลังปรับยอด...');
+    showLoading('กำลังปรับยอดสต็อกนับจริง...');
     
-    var promises = adjustments.map(function(a) {
-      // 🟢 ส่ง Payload ข้อมูลชุดเต็มที่มีฟิลด์เดิมครบถ้วนไปอัปเดต ข้อมูลเดิมจึงจะไม่หาย
-      return callAPI('updateItem', AUTH.token, a.item_id, a.payload);
+    var promiseChain = Promise.resolve();
+    
+    adjustments.forEach(function(adj) {
+      promiseChain = promiseChain.then(function() {
+        return callAPI('updateItem', AUTH.token, adj.item_id, adj.payload);
+      });
     });
     
-    Promise.all(promises).then(function() {
+    promiseChain.then(function() {
       hideLoading();
       showSuccess('ปรับยอดเรียบร้อย ' + adjustments.length + ' รายการ');
-      _itemsCacheTime = 0; // ล้างแคชเพื่อบังคับให้หน้าเว็บโหลดข้อมูลล่าสุดจาก Sheets
-      renderStocktake();
-    }).catch(function() { 
+      _itemsCacheTime = 0; // ล้างแคชเพื่อบังคับหน้าเว็บดึงยอดดิบล่าสุดจาก Sheets จริงๆ
+      renderStocktake();  // รีเฟรชหน้านับสต็อกเพื่อแสดงตัวเลขใหม่
+    }).catch(function(err) { 
       hideLoading(); 
-      showError('เกิดข้อผิดพลาดบางรายการ'); 
+      console.error('Stocktake save error:', err);
+      showError('เกิดข้อผิดพลาดในการบันทึกข้อมูลบางรายการ'); 
     });
   });
 }
-
 // ===== PRINT QR LABELS =====
 var _printQRFilter = { search: '', category: 'all' };
 function renderPrintQRLabels() {
