@@ -2714,3 +2714,4 @@ callAPI('getConfig').then(function(res) {
     }
   });
 }; // 🟢 บรรทัดนี้ปิด window.onload ตัวใหญ่สุด
+}
