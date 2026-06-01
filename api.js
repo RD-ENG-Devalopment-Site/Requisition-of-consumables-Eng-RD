@@ -3,7 +3,7 @@
 // ============================================================
 
 // ⚠️ สำคัญมาก: ตรวจสอบให้มั่นใจว่ารหัสภายในลิงก์นี้ตรงกับ URL Web App ปัจจุบันของคุณหลังกด Deploy
-var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwh5YLI5jXSnGyNWRa_sRQ8lrnhQqryRRtdI9J_J8xbntzDDyx1O_qaw-Hgfh8cZ0tz/exec';
+var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxvhgwoyvg3oAsCgevhHfH_YCtxkFLTIUBGlO3hc_Cki2G2X_TtCiDSaM6_roGrC5yb3A/exec';
 
 function callAPI(fnName) {
   var args = Array.prototype.slice.call(arguments, 1);
