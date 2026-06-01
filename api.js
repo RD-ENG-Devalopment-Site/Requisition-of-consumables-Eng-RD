@@ -33,9 +33,18 @@ function callAPI(fnName) {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return res.json();
   }).then(function(data) {
-    console.log('[API] Data', data);
+    console.log('[API] Data raw:', data);
     
-    // ตัวป้องกันความปลอดภัย: ตรวจสอบและซ่อมแซมโครงสร้างก้อนข้อมูล JSON ก่อนส่งไปให้ app.js ใช้งาน
+    // 🟢 ซ่อมแซมระบบแมตช์ข้อมูลพิเศษสำหรับฟังก์ชัน 'getConfig'
+    // ดักจับเพื่อให้มั่นใจว่า app.js จะได้วัตถุที่มี app_name อยู่ชั้นบนสุดเสมอ ไม่เป็น null เด็ดขาด
+    if (fnName === 'getConfig' && data && typeof data === 'object') {
+      if (data.hasOwnProperty('data') && data.data && data.data.hasOwnProperty('app_name')) {
+        return data.data; // ถ้าห่อ data มาข้างใน ให้แกะเอาเนื้อข้อมูลข้างในส่งไปให้ app.js
+      }
+      return data; // ถ้าส่งมาแบบเรียบตรงอยู่แล้ว ส่งก้อนนี้ไปได้เลย
+    }
+    
+    // ตัวป้องกันความปลอดภัยสำหรับ API ฟังก์ชันอื่น ๆ
     if (data && typeof data === 'object' && data !== null) {
       if (!data.hasOwnProperty('data')) {
         return { success: true, data: data };
