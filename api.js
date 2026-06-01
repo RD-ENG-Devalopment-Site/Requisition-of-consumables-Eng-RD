@@ -3,7 +3,7 @@
 // ============================================================
 
 // ⚠️ สำคัญมาก: ตรวจสอบให้มั่นใจว่ารหัสภายในลิงก์นี้ตรงกับ URL Web App ปัจจุบันของคุณหลังกด Deploy
-var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxvhgwoyvg3oAsCgevhHfH_YCtxkFLTIUBGlO3hc_Cki2G2X_TtCiDSaM6_roGrC5yb3A/exec';
+var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwh5YLI5jXSnGyNWRa_sRQ8lrnhQqryRRtdI9J_J8xbntzDDyx1O_qaw-Hgfh8cZ0tz/exec';
 
 function callAPI(fnName) {
   var args = Array.prototype.slice.call(arguments, 1);
@@ -33,25 +33,13 @@ function callAPI(fnName) {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return res.json();
   }).then(function(data) {
-    console.log('[API] Data raw:', data);
+    console.log('[API] Data received from server:', data);
     
-    // 🟢 ซ่อมแซมระบบแมตช์ข้อมูลพิเศษสำหรับฟังก์ชัน 'getConfig'
-    // ดักจับเพื่อให้มั่นใจว่า app.js จะได้วัตถุที่มี app_name อยู่ชั้นบนสุดเสมอ ไม่เป็น null เด็ดขาด
-    if (fnName === 'getConfig' && data && typeof data === 'object') {
-      if (data.hasOwnProperty('data') && data.data && data.data.hasOwnProperty('app_name')) {
-        return data.data; // ถ้าห่อ data มาข้างใน ให้แกะเอาเนื้อข้อมูลข้างในส่งไปให้ app.js
-      }
-      return data; // ถ้าส่งมาแบบเรียบตรงอยู่แล้ว ส่งก้อนนี้ไปได้เลย
-    }
-    
-    // ตัวป้องกันความปลอดภัยสำหรับ API ฟังก์ชันอื่น ๆ
-    if (data && typeof data === 'object' && data !== null) {
-      if (!data.hasOwnProperty('data')) {
-        return { success: true, data: data };
-      }
-    }
-    
+    // 🟢 ตัวผ่านข้อมูลแบบบริสุทธิ์ (Pure Pass-Through)
+    // ส่งข้อมูลที่ดึงมาได้จริงจาก Google Apps Script ไปให้ app.js ตรงๆ 
+    // เพื่อให้ลอจิกใน app.js แกะโครงสร้างตามที่สคริปต์หน้าบ้านเซ็ตไว้แต่แรก
     return data;
+    
   }).catch(function(err) {
     console.warn('[API] Fallback to localStorage mock for', fnName, err);
     if (window._mockAPI && window._mockAPI[fnName]) {
