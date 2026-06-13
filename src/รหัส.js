@@ -418,6 +418,7 @@ function addItem(token, itemData) {
       item_type: itemData.item_type || 'consumable',
       part_no: itemData.part_no || '',
       machine_name: itemData.machine_name || '',
+      compatible_machines: itemData.compatible_machines || '',
       condition_status: itemData.condition_status || '',
       serial_tracking: !!itemData.serial_tracking,
       current_stock: parseInt(itemData.current_stock) || 0,
@@ -443,6 +444,7 @@ function normalizeItemRecord(item) {
   if (typeof item.spare_part_units === 'undefined') item.spare_part_units = '';
   if (!item.part_no) item.part_no = '';
   if (!item.machine_name) item.machine_name = '';
+  if (typeof item.compatible_machines === 'undefined') item.compatible_machines = '';
   return item;
 }
 
@@ -460,6 +462,7 @@ function updateItem(token, itemId, itemData) {
       item_type: itemData.item_type || 'consumable',
       part_no: itemData.part_no || '',
       machine_name: itemData.machine_name || '',
+      compatible_machines: itemData.compatible_machines || '',
       condition_status: itemData.condition_status || '',
       serial_tracking: !!itemData.serial_tracking,
       min_stock: parseInt(itemData.min_stock) || 0,

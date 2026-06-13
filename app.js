@@ -637,6 +637,33 @@ var ITEM_TYPE_LABELS = { consumable: 'วัสดุสิ้นเปลือ
 function getItemTypeLabel(type) {
   return ITEM_TYPE_LABELS[type || 'consumable'] || type || 'consumable';
 }
+function splitMachineList(value) {
+  var text = Array.isArray(value) ? value.join('\n') : String(value || '');
+  return text.split(/[\n,;]+/).map(function(s) { return String(s || '').trim(); }).filter(function(s, idx, arr) {
+    return s && arr.indexOf(s) === idx;
+  });
+}
+function getMachineUsageText(item) {
+  if (!item) return '-';
+  var primary = String(item.machine_name || '').trim();
+  var compatibles = splitMachineList(item.compatible_machines);
+  if (primary) {
+    compatibles = compatibles.filter(function(name) { return name !== primary; });
+  }
+  var parts = [];
+  if (primary) parts.push('สำหรับ ' + primary);
+  if (compatibles.length) parts.push('ใช้ได้กับ ' + compatibles.join(', '));
+  return parts.length ? parts.join(' • ') : '-';
+}
+function itemSearchHaystack(item) {
+  return [
+    item.name || '',
+    item.item_code || '',
+    item.category || '',
+    item.machine_name || '',
+    String(item.compatible_machines || '')
+  ].join(' ').toLowerCase();
+}
 var ITEM_CONDITION_LABELS = { new: 'ใหม่', good: 'พร้อมใช้', standby: 'สำรอง', used: 'ใช้งานแล้ว', damaged: 'ชำรุด', repair: 'รอซ่อม' };
 
 function renderItems() {
@@ -697,10 +724,10 @@ function buildItemsPage() {
   html += '<div class="card overflow-hidden">';
   html += '<div class="hidden md:block overflow-x-auto">';
   html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-gray-600 text-xs">';
-  html += '<tr><th class="px-4 py-3 text-left w-10">#</th><th class="px-4 py-3 text-left w-14">รูป</th><th class="px-4 py-3 text-left">รหัส</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">ประเภท</th><th class="px-4 py-3 text-left">ขนาด</th><th class="px-4 py-3 text-left">หน่วย</th><th class="px-4 py-3 text-left">หมวดหมู่</th><th class="px-4 py-3 text-center">สต็อก</th><th class="px-4 py-3 text-center">ขั้นต่ำ</th><th class="px-4 py-3 text-center">สถานะ</th><th class="px-4 py-3 text-center">จัดการ</th></tr></thead>';
+  html += '<tr><th class="px-4 py-3 text-left w-10">#</th><th class="px-4 py-3 text-left w-14">รูป</th><th class="px-4 py-3 text-left">รหัส</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">ประเภท</th><th class="px-4 py-3 text-left">เครื่องจักร</th><th class="px-4 py-3 text-left">ขนาด</th><th class="px-4 py-3 text-left">หน่วย</th><th class="px-4 py-3 text-left">หมวดหมู่</th><th class="px-4 py-3 text-center">สต็อก</th><th class="px-4 py-3 text-center">ขั้นต่ำ</th><th class="px-4 py-3 text-center">สถานะ</th><th class="px-4 py-3 text-center">จัดการ</th></tr></thead>';
   html += '<tbody class="divide-y divide-gray-100">';
   if (paged.length === 0) {
-    html += '<tr><td colspan="12" class="text-center py-10 text-gray-400">ไม่พบรายการ</td></tr>';
+    html += '<tr><td colspan="13" class="text-center py-10 text-gray-400">ไม่พบรายการ</td></tr>';
   }
   paged.forEach(function(item, idx) {
     var sClass = getStockClass(item.current_stock, item.min_stock);
@@ -713,6 +740,7 @@ function buildItemsPage() {
     html += '<td class="px-4 py-3 font-mono text-xs text-navy-700">' + escHtml(item.item_code) + '</td>';
     html += '<td class="px-4 py-3 font-medium text-gray-800">' + escHtml(item.name) + '</td>';
     html += '<td class="px-4 py-3 text-xs"><span class="px-2 py-0.5 rounded-full font-medium ' + (item.item_type === 'spare_part' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700') + '">' + escHtml(ITEM_TYPE_LABELS[item.item_type || 'consumable'] || ITEM_TYPE_LABELS.consumable) + '</span></td>';
+    html += '<td class="px-4 py-3 text-xs text-gray-600">' + escHtml(getMachineUsageText(item)) + '</td>';
     html += '<td class="px-4 py-3 text-gray-500 text-xs">' + escHtml(item.size || '-') + '</td>';
     html += '<td class="px-4 py-3 text-gray-600 text-xs">' + escHtml(item.unit) + '</td>';
     html += '<td class="px-4 py-3 text-xs text-gray-500">' + escHtml(item.category || '-') + '</td>';
@@ -741,6 +769,7 @@ function buildItemsPage() {
     html += '<span class="px-2 py-0.5 rounded-full text-xs font-medium ' + sClass + '">' + sLabel + '</span></div>';
     html += '<div><p class="font-semibold text-gray-800 text-sm leading-snug">' + escHtml(item.name) + '</p>';
     html += '<p class="text-xs text-gray-400 mt-0.5">' + escHtml(item.item_code) + ' • ' + escHtml(ITEM_TYPE_LABELS[item.item_type || 'consumable'] || ITEM_TYPE_LABELS.consumable) + '</p>';
+    html += '<p class="text-xs text-gray-500 mt-0.5">' + escHtml(getMachineUsageText(item)) + '</p>';
     html += '<p class="text-xs text-gray-500 mt-0.5">' + escHtml(ITEM_TYPE_LABELS[item.item_type || 'consumable'] || ITEM_TYPE_LABELS.consumable) + ' • ' + escHtml(item.category || '') + '</p></div>';
     html += '<div class="flex justify-between text-xs text-gray-500"><span>คงเหลือ</span><span class="font-bold text-gray-800">' + item.current_stock + ' ' + escHtml(item.unit) + '</span></div>';
     html += '<div class="flex gap-2 pt-1">';
@@ -761,7 +790,7 @@ function buildItemsPage() {
 
 function filterItems(data, f) {
   return data.filter(function(i) {
-    if (f.search && !i.name.toLowerCase().includes(f.search.toLowerCase()) && !(i.item_code || '').toLowerCase().includes(f.search.toLowerCase())) return false;
+    if (f.search && itemSearchHaystack(i).indexOf(f.search.toLowerCase()) === -1) return false;
     if (f.type !== 'all' && (i.item_type || 'consumable') !== f.type) return false;
     if (f.category !== 'all' && i.category !== f.category) return false;
     if (f.stock === 'low' && i.current_stock > i.min_stock) return false;
@@ -795,10 +824,10 @@ function applyItemFilter() {
 }
 
 function downloadCSVSample() {
-  var csv = 'รหัส,ชื่อวัสดุ,ประเภท,ขนาด,หน่วย,หมวดหมู่,สถานะสภาพ,ติดตามSerial,Serials,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด\n';
-  csv += 'SUP-001,ถุงมือยาง (ไม่มีแป้ง) สีฟ้า,consumable,size S,กล่อง,อุปกรณ์ป้องกัน,,,,20,5,ถุงมือยางไม่มีแป้งสำหรับงานทั่วไป\n';
-  csv += 'SP-001,สายพานมอเตอร์,spare_part,,เส้น,อะไหล่เครื่องจักร,good,true,SP-001-A;SP-001-B,2,1,สายพานอะไหล่เครื่องจักร\n';
-  csv += 'SUP-003,สำลี,consumable,200 g.,ถุง,วัสถุดิบทางการแพทย์,,,,50,10,สำลีสะอาดบริสุทธิ์ 200 กรัม\n';
+  var csv = 'รหัส,ชื่อวัสดุ,ประเภท,ขนาด,หน่วย,หมวดหมู่,สำหรับเครื่องอะไร,ใช้ได้กับเครื่องจักรไหนบ้าง,สถานะสภาพ,ติดตามSerial,Serials,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด\n';
+  csv += 'SUP-001,ถุงมือยาง (ไม่มีแป้ง) สีฟ้า,consumable,size S,กล่อง,อุปกรณ์ป้องกัน,,เครื่องซีล,เครื่องแพ็ค,,,,20,5,ถุงมือยางไม่มีแป้งสำหรับงานทั่วไป\n';
+  csv += 'SP-001,สายพานมอเตอร์,spare_part,,เส้น,อะไหล่เครื่องจักร,เครื่องบรรจุ,เครื่องบรรจุ;เครื่องแพ็ค,good,true,SP-001-A;SP-001-B,2,1,สายพานอะไหล่เครื่องจักร\n';
+  csv += 'SUP-003,สำลี,consumable,200 g.,ถุง,วัสถุดิบทางการแพทย์,,เครื่องแพ็ค, ,,,,50,10,สำลีสะอาดบริสุทธิ์ 200 กรัม\n';
   var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   var link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
@@ -816,7 +845,7 @@ function openImportCSVModal() {
   body += '<p class="font-semibold mb-1">หมายเหตุ</p>';
   body += '<ul class="list-disc list-inside space-y-0.5">';
   body += '<li>รองรับไฟล์ .csv เท่านั้น (UTF-8)</li>';
-  body += '<li>คอลัมน์หลัก: รหัส,ชื่อวัสดุ,ประเภท,ขนาด,หน่วย,หมวดหมู่,สถานะสภาพ,ติดตามSerial,Serials,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด</li>';
+  body += '<li>คอลัมน์หลัก: รหัส,ชื่อวัสดุ,ประเภท,ขนาด,หน่วย,หมวดหมู่,สำหรับเครื่องอะไร,ใช้ได้กับเครื่องจักรไหนบ้าง,สถานะสภาพ,ติดตามSerial,Serials,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด</li>';
   body += '<li>หากไม่มีรหัส ระบบจะสร้างรหัสอัตโนมัติ</li>';
   body += '</ul></div>';
   body += '<div id="csvImportPreview"></div>';
@@ -838,11 +867,12 @@ function previewCSVImport() {
     var html = '<p class="text-sm font-medium text-gray-700 mb-2">ตัวอย่างข้อมูล (' + _csvImportRows.length + ' รายการ)</p>';
     html += '<div class="max-h-64 overflow-y-auto border border-gray-200 rounded-xl">';
     html += '<table class="w-full text-xs"><thead class="bg-gray-50 text-gray-600 sticky top-0">';
-    html += '<tr><th class="px-2 py-1.5 text-left">รหัส</th><th class="px-2 py-1.5 text-left">ชื่อ</th><th class="px-2 py-1.5 text-left">ประเภท</th><th class="px-2 py-1.5 text-left">หน่วย</th><th class="px-2 py-1.5 text-center">สต็อก</th><th class="px-2 py-1.5 text-center">ขั้นต่ำ</th></tr></thead><tbody class="divide-y divide-gray-100">';
+    html += '<tr><th class="px-2 py-1.5 text-left">รหัส</th><th class="px-2 py-1.5 text-left">ชื่อ</th><th class="px-2 py-1.5 text-left">ประเภท</th><th class="px-2 py-1.5 text-left">เครื่องจักร</th><th class="px-2 py-1.5 text-left">หน่วย</th><th class="px-2 py-1.5 text-center">สต็อก</th><th class="px-2 py-1.5 text-center">ขั้นต่ำ</th></tr></thead><tbody class="divide-y divide-gray-100">';
     _csvImportRows.forEach(function(row) {
       html += '<tr><td class="px-2 py-1.5">' + escHtml(row['รหัส'] || '-') + '</td>';
       html += '<td class="px-2 py-1.5">' + escHtml(row['ชื่อวัสดุ'] || '') + '</td>';
       html += '<td class="px-2 py-1.5">' + escHtml(ITEM_TYPE_LABELS[row['ประเภท'] || 'consumable'] || row['ประเภท'] || 'consumable') + '</td>';
+      html += '<td class="px-2 py-1.5">' + escHtml((row['สำหรับเครื่องอะไร'] || '') + (row['ใช้ได้กับเครื่องจักรไหนบ้าง'] ? ' • ' + row['ใช้ได้กับเครื่องจักรไหนบ้าง'] : '')) + '</td>';
       html += '<td class="px-2 py-1.5">' + escHtml(row['หน่วย'] || '') + '</td>';
       html += '<td class="px-2 py-1.5 text-center">' + escHtml(row['สต็อกเริ่มต้น'] || '0') + '</td>';
       html += '<td class="px-2 py-1.5 text-center">' + escHtml(row['สต็อกขั้นต่ำ'] || '5') + '</td></tr>';
@@ -878,13 +908,15 @@ function handleCSVImport() {
       var name = row['ชื่อวัสดุ'] || '';
       if (!name) return Promise.resolve({ success: false, message: 'ขาดชื่อวัสดุ' });
     var data = {
-      item_code: itemCode,
-      name: name,
-      item_type: row['ประเภท'] || 'consumable',
-      size: row['ขนาด'] || '',
-      unit: row['หน่วย'] || 'ชิ้น',
-      category: row['หมวดหมู่'] || '',
-      condition_status: row['สถานะสภาพ'] || '',
+      item_code: itemCode,
+      name: name,
+      item_type: row['ประเภท'] || 'consumable',
+      size: row['ขนาด'] || '',
+      unit: row['หน่วย'] || 'ชิ้น',
+      category: row['หมวดหมู่'] || '',
+      machine_name: row['สำหรับเครื่องอะไร'] || '',
+      compatible_machines: row['ใช้ได้กับเครื่องจักรไหนบ้าง'] || '',
+      condition_status: row['สถานะสภาพ'] || '',
       serial_tracking: String(row['ติดตามSerial'] || '').toLowerCase() === 'true',
       spare_part_units: row['Serials'] || '',
       current_stock: parseInt(row['สต็อกเริ่มต้น'] || 0),
@@ -939,12 +971,16 @@ function itemFormHTML(item) {
   var type = item.item_type || 'consumable';
   var condition = item.condition_status || '';
   var serials = item.spare_part_units || '';
+  var machineName = item.machine_name || '';
+  var compatibleMachines = Array.isArray(item.compatible_machines) ? item.compatible_machines.join('\n') : (item.compatible_machines || '');
   return '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'
     + fieldHTML('ชื่อวัสดุ *', 'itemName', 'text', item.name || '', 'sm:col-span-2')
     + '<div><label class="form-label">ประเภท *</label><select id="itemType" onchange="toggleItemFormTypeFields()" class="form-input"><option value="consumable"' + (type === 'consumable' ? ' selected' : '') + '>วัสดุสิ้นเปลือง</option><option value="spare_part"' + (type === 'spare_part' ? ' selected' : '') + '>อะไหล่เครื่องจักร</option></select></div>'
     + fieldHTML('ขนาดบรรจุ', 'itemSize', 'text', item.size || '')
     + fieldHTML('หน่วย *', 'itemUnit', 'text', item.unit || '')
     + fieldHTML('หมวดหมู่', 'itemCategory', 'text', item.category || 'วัสดุทำความสะอาด')
+    + '<div class="item-spare-field sm:col-span-2"><label class="form-label">สำหรับเครื่องอะไร *</label><input type="text" id="itemMachineName" value="' + escHtml(machineName) + '" class="form-input" placeholder="เช่น เครื่องตัด, เครื่อง Milling, เครื่องบรรจุ"></div>'
+    + '<div class="sm:col-span-2"><label class="form-label">ใช้ได้กับเครื่องจักรไหนบ้าง</label><textarea id="itemCompatibleMachines" rows="3" class="form-input" placeholder="พิมพ์ชื่อเครื่องจักรได้หลายบรรทัด หรือคั่นด้วยจุลภาค">' + escHtml(compatibleMachines) + '</textarea><p class="text-xs text-gray-400 mt-1">ช่วยค้นหาและแสดงผลเวลาเลือกวัสดุที่ใช้ได้หลายเครื่อง</p></div>'
     + '<div class="item-consumable-field">' + fieldHTML('สต็อกเริ่มต้น', 'itemStock', 'number', item.current_stock || 0) + '</div>'
     + fieldHTML('สต็อกขั้นต่ำ', 'itemMinStock', 'number', item.min_stock || 5)
     + '<div class="item-spare-field sm:col-span-2"><div class="rounded-xl border border-violet-100 bg-violet-50/60 p-4 space-y-4"><div><label class="form-label">สถานะสภาพ *</label><select id="itemCondition" class="form-input"><option value="">- เลือกสถานะ -</option><option value="new"' + (condition === 'new' ? ' selected' : '') + '>ใหม่</option><option value="good"' + (condition === 'good' ? ' selected' : '') + '>พร้อมใช้</option><option value="standby"' + (condition === 'standby' ? ' selected' : '') + '>สำรอง</option><option value="used"' + (condition === 'used' ? ' selected' : '') + '>ใช้งานแล้ว</option><option value="damaged"' + (condition === 'damaged' ? ' selected' : '') + '>ชำรุด</option><option value="repair"' + (condition === 'repair' ? ' selected' : '') + '>รอซ่อม</option></select></div><label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" id="itemSerialTracking" onchange="toggleItemSerialFields()" class="accent-navy-600"' + (item.serial_tracking ? ' checked' : '') + '>ติดตาม Serial / Item-level</label><div class="item-serial-field"><label class="form-label">Serial No. / รหัสแต่ละชิ้น</label><textarea id="itemSerials" rows="4" class="form-input" placeholder="ใส่ 1 บรรทัดต่อ 1 ชิ้น">' + escHtml(serials) + '</textarea><p class="text-xs text-gray-400 mt-1">รายการนี้จะเก็บแยกจากสต็อก รวมไว้เพื่อดูประวัติแต่ละชิ้น</p></div></div></div>'
@@ -1004,6 +1040,8 @@ function readItemForm() {
   var sizeEl = document.getElementById('itemSize');
   var catEl = document.getElementById('itemCategory');
   var typeEl = document.getElementById('itemType');
+  var machineEl = document.getElementById('itemMachineName');
+  var compatEl = document.getElementById('itemCompatibleMachines');
   var stockEl = document.getElementById('itemStock');
   var minEl = document.getElementById('itemMinStock');
   var conditionEl = document.getElementById('itemCondition');
@@ -1014,11 +1052,14 @@ function readItemForm() {
   var name = nameEl ? nameEl.value : '';
   var unit = unitEl ? unitEl.value : '';
   var itemType = typeEl ? typeEl.value : 'consumable';
+  var machineName = machineEl ? machineEl.value.trim() : '';
+  var compatibleMachines = compatEl ? compatEl.value.trim() : '';
   var condition = conditionEl ? conditionEl.value : '';
   var serialTracking = serialTrackEl ? serialTrackEl.checked : false;
   var serials = serialsEl ? (serialsEl.value || '') : '';
   if (!name.trim()) { showError('กรุณากรอกชื่อวัสดุ'); return null; }
   if (!unit.trim()) { showError('กรุณากรอกหน่วย'); return null; }
+  if (itemType === 'spare_part' && !machineName) { showError('กรุณาระบุสำหรับเครื่องอะไร'); return null; }
   if (itemType === 'spare_part' && !condition) { showError('กรุณาเลือกสถานะสภาพของอะไหล่'); return null; }
   if (itemType === 'spare_part' && serialTracking && !serials.trim()) { showError('กรุณาระบุ Serial อย่างน้อย 1 รายการ'); return null; }
   
@@ -1026,6 +1067,8 @@ function readItemForm() {
     name: name, size: sizeEl ? sizeEl.value : '',
     unit: unit, category: catEl ? catEl.value : '',
     item_type: itemType,
+    machine_name: machineName,
+    compatible_machines: splitMachineList(compatibleMachines).join('\n'),
     current_stock: stockEl ? parseInt(stockEl.value) || 0 : 0,
     min_stock: minEl ? parseInt(minEl.value) || 5 : 5,
     condition_status: condition,
@@ -1144,6 +1187,10 @@ function showItemDetailModal(itemId) {
         body += '</div></div>';
       }
     }
+  }
+
+  if (getMachineUsageText(item) !== '-') {
+    body += '<div class="bg-gray-50 rounded-xl p-3"><p class="text-xs text-gray-400 mb-1">เครื่องจักรที่เกี่ยวข้อง</p><p class="text-sm text-gray-700">' + escHtml(getMachineUsageText(item)) + '</p></div>';
   }
 
   body += '<div class="bg-white border border-gray-200 rounded-xl p-4">'
