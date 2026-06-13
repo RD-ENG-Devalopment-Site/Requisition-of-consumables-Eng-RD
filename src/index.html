@@ -280,12 +280,23 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
-<script src="api.js?v=4"></script>
-<script src="app.js?v=36"></script>
+<script src="api.js?v=5"></script>
+<script src="app.js?v=37"></script>
 <script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(function(){});
-}
+(async function() {
+  if ('serviceWorker' in navigator) {
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(function(reg) { return reg.unregister(); }));
+    } catch (e) {}
+  }
+  if (window.caches && caches.keys) {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(function(key) { return caches.delete(key); }));
+    } catch (e) {}
+  }
+})();
 </script>
 </body>
 </html>

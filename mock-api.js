@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // Mock API — localStorage backend (works offline, no GAS needed)
 // ============================================================
 (function() {
@@ -79,8 +79,8 @@
 
     // Withdrawals
     var withdrawals = [
-      { id:'w1', item_id:'i1', user_id:'u3', user_name:'พนักงานตัวอย่าง', quantity:10, date:'2025-05-10', status:'pending', note:'', purpose:'ใช้งานทั่วไป', approved_by:'', approved_at:'', withdraw_no:'WD0001', created_at:'2025-05-10T09:00:00Z' },
-      { id:'w2', item_id:'i5', user_id:'u3', user_name:'พนักงานตัวอย่าง', quantity:2, date:'2025-05-12', status:'approved', note:'อนุมัติแล้ว', purpose:'เครื่องพิมพ์ชั้น 2', approved_by:'admin', approved_at:'2025-05-12T10:00:00Z', withdraw_no:'WD0002', created_at:'2025-05-12T09:00:00Z' }
+      { id:'w1', withdraw_no:'WD0001', item_id:'i1', item_name:'กระดาษ A4 80แกรม', item_code:'P001', quantity:10, quantity_requested:10, quantity_approved:0, unit:'รีม', user_id:'u3', user_name:'พนักงานตัวอย่าง', requested_by:'u3', requested_by_name:'พนักงานตัวอย่าง', requested_at:'2025-05-10T09:00:00Z', date:'2025-05-10', status:'pending', note:'', purpose:'ใช้งานทั่วไป', approved_by:'', approved_by_name:'', approved_at:'', reject_reason:'', via_qr:false, created_at:'2025-05-10T09:00:00Z' },
+      { id:'w2', withdraw_no:'WD0002', item_id:'i5', item_name:'หมึกพิมพ์ HP 205A Black', item_code:'I001', quantity:2, quantity_requested:2, quantity_approved:2, unit:'ตลับ', user_id:'u3', user_name:'พนักงานตัวอย่าง', requested_by:'u3', requested_by_name:'พนักงานตัวอย่าง', requested_at:'2025-05-12T09:00:00Z', date:'2025-05-12', status:'approved', note:'อนุมัติแล้ว', purpose:'เครื่องพิมพ์ชั้น 2', approved_by:'admin', approved_by_name:'ผู้ดูแลระบบ', approved_at:'2025-05-12T10:00:00Z', reject_reason:'', via_qr:false, created_at:'2025-05-12T09:00:00Z' }
     ];
     _set('withdrawals', withdrawals);
 
@@ -320,4 +320,73 @@
     _set('transactions', tx);
   }
 
+  window._mockAPI.addWithdrawal = function(token, data) {
+    var wd = _get('withdrawals') || [];
+    var items = _get('items') || [];
+    var authUser = _auth(token);
+    if (!authUser) return { success:false, message:'กรุณาเข้าสู่ระบบใหม่' };
+
+    var requested = [];
+    if (data && Array.isArray(data.items) && data.items.length > 0) {
+      requested = data.items;
+    } else if (data && data.item_id) {
+      requested = [{ item_id: data.item_id, quantity: data.quantity }];
+    }
+
+    var merged = {};
+    requested.forEach(function(req) {
+      var itemId = req.item_id || '';
+      var qty = parseInt(req.quantity, 10) || 0;
+      if (!itemId || qty <= 0) return;
+      if (!merged[itemId]) merged[itemId] = 0;
+      merged[itemId] += qty;
+    });
+
+    var selected = [];
+    Object.keys(merged).forEach(function(itemId) {
+      var item = items.find(function(i){ return i.id === itemId; });
+      if (!item) throw new Error('ไม่พบรายการวัสดุ');
+      if (item.current_stock < merged[itemId]) throw new Error('สต็อกไม่เพียงพอ (' + item.current_stock + ')');
+      selected.push({ item:item, quantity: merged[itemId] });
+    });
+
+    if (!selected.length) return { success:false, message:'กรุณาเลือกรายการวัสดุอย่างน้อย 1 รายการ' };
+
+    var no = 'WD' + String(wd.length + 1).padStart(4, '0');
+    var now = _now();
+    selected.forEach(function(entry) {
+      var item = entry.item;
+      wd.push({
+        id:_nextId(),
+        withdraw_no:no,
+        request_group:no,
+        item_id:item.id,
+        item_name:item.name,
+        item_code:item.item_code,
+        quantity:entry.quantity,
+        quantity_requested:entry.quantity,
+        quantity_approved:0,
+        unit:item.unit,
+        user_id:authUser.id,
+        user_name:authUser.name,
+        requested_by:authUser.id,
+        requested_by_name:authUser.name,
+        requested_at:now,
+        date:now.slice(0,10),
+        status:'pending',
+        note:data.note || '',
+        purpose:data.purpose || '',
+        approved_by:'',
+        approved_by_name:'',
+        approved_at:'',
+        reject_reason:'',
+        via_qr:!!data.via_qr,
+        created_at:now
+      });
+    });
+    _set('withdrawals', wd);
+    return { success:true, message:'ยื่นคำขอสำเร็จ', withdraw_no:no, items_count:selected.length };
+  };
+
 })();
+

@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // app.js — Frontend (Static Site - วัสดุสิ้นเปลืองเท่านั้น)
 // ============================================================
 
@@ -621,10 +621,12 @@ function quickReject(wdId) {
 // ===== ITEMS =====
 var _itemsData = [];
 var _itemsPage = 1;
-var _itemsFilter = { search: '', category: 'all', stock: 'all' };
+var _itemsFilter = { search: '', category: 'all', stock: 'all', type: 'all' };
 var _itemImageFileId = null;
 var _itemsCacheTime = 0;
 var ITEMS_CACHE_TTL = 30000;
+var ITEM_TYPE_LABELS = { consumable: 'วัสดุสิ้นเปลือง', spare_part: 'อะไหล่เครื่องจักร' };
+var ITEM_CONDITION_LABELS = { new: 'ใหม่', good: 'พร้อมใช้', standby: 'สำรอง', used: 'ใช้งานแล้ว', damaged: 'ชำรุด', repair: 'รอซ่อม' };
 
 function renderItems() {
   if (AUTH.user.role !== 'admin') { loadPage('stock'); return; }
@@ -654,11 +656,16 @@ function buildItemsPage() {
 
   var html = '<div class="fade-in space-y-4">';
   html += '<div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">';
-  html += '<div class="flex gap-2 flex-wrap">';
-  html += '<div class="relative"><i class="fi fi-rr-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>';
-  html += '<input type="text" id="itemSearch" placeholder="ค้นหาวัสดุ..." value="' + escHtml(_itemsFilter.search) + '"';
-  html += ' onkeyup="debounceItemFilter()" class="pl-9 pr-4 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-500 w-48"></div>';
-  html += '<select id="itemCatFilter" onchange="applyItemFilter()" class="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-500">';
+  html += '<div class="flex gap-2 flex-wrap">';
+  html += '<div class="relative"><i class="fi fi-rr-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>';
+  html += '<input type="text" id="itemSearch" placeholder="ค้นหาวัสดุ..." value="' + escHtml(_itemsFilter.search) + '"';
+  html += ' onkeyup="debounceItemFilter()" class="pl-9 pr-4 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-500 w-48"></div>';
+  html += '<select id="itemTypeFilter" onchange="applyItemFilter()" class="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-500">';
+  html += '<option value="all">ทุกประเภท</option>';
+  html += '<option value="consumable" ' + (_itemsFilter.type === 'consumable' ? 'selected' : '') + '>วัสดุสิ้นเปลือง</option>';
+  html += '<option value="spare_part" ' + (_itemsFilter.type === 'spare_part' ? 'selected' : '') + '>อะไหล่เครื่องจักร</option>';
+  html += '</select>';
+  html += '<select id="itemCatFilter" onchange="applyItemFilter()" class="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-500">';
   html += '<option value="all">ทุกหมวดหมู่</option>';
   cats.forEach(function(c) { html += '<option value="' + escHtml(c) + '" ' + (_itemsFilter.category === c ? 'selected' : '') + '>' + escHtml(c) + '</option>'; });
   html += '</select>';
@@ -679,10 +686,10 @@ function buildItemsPage() {
   html += '<div class="card overflow-hidden">';
   html += '<div class="hidden md:block overflow-x-auto">';
   html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-gray-600 text-xs">';
-  html += '<tr><th class="px-4 py-3 text-left w-10">#</th><th class="px-4 py-3 text-left w-14">รูป</th><th class="px-4 py-3 text-left">รหัส</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">ขนาด</th><th class="px-4 py-3 text-left">หน่วย</th><th class="px-4 py-3 text-left">หมวดหมู่</th><th class="px-4 py-3 text-center">สต็อก</th><th class="px-4 py-3 text-center">ขั้นต่ำ</th><th class="px-4 py-3 text-center">สถานะ</th><th class="px-4 py-3 text-center">จัดการ</th></tr></thead>';
+  html += '<tr><th class="px-4 py-3 text-left w-10">#</th><th class="px-4 py-3 text-left w-14">รูป</th><th class="px-4 py-3 text-left">รหัส</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">ประเภท</th><th class="px-4 py-3 text-left">ขนาด</th><th class="px-4 py-3 text-left">หน่วย</th><th class="px-4 py-3 text-left">หมวดหมู่</th><th class="px-4 py-3 text-center">สต็อก</th><th class="px-4 py-3 text-center">ขั้นต่ำ</th><th class="px-4 py-3 text-center">สถานะ</th><th class="px-4 py-3 text-center">จัดการ</th></tr></thead>';
   html += '<tbody class="divide-y divide-gray-100">';
   if (paged.length === 0) {
-    html += '<tr><td colspan="11" class="text-center py-10 text-gray-400">ไม่พบรายการ</td></tr>';
+    html += '<tr><td colspan="12" class="text-center py-10 text-gray-400">ไม่พบรายการ</td></tr>';
   }
   paged.forEach(function(item, idx) {
     var sClass = getStockClass(item.current_stock, item.min_stock);
@@ -694,6 +701,7 @@ function buildItemsPage() {
     html += '<td class="px-4 py-3">' + imgHtml + '</td>';
     html += '<td class="px-4 py-3 font-mono text-xs text-navy-700">' + escHtml(item.item_code) + '</td>';
     html += '<td class="px-4 py-3 font-medium text-gray-800">' + escHtml(item.name) + '</td>';
+    html += '<td class="px-4 py-3 text-xs"><span class="px-2 py-0.5 rounded-full font-medium ' + (item.item_type === 'spare_part' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700') + '">' + escHtml(ITEM_TYPE_LABELS[item.item_type || 'consumable'] || ITEM_TYPE_LABELS.consumable) + '</span></td>';
     html += '<td class="px-4 py-3 text-gray-500 text-xs">' + escHtml(item.size || '-') + '</td>';
     html += '<td class="px-4 py-3 text-gray-600 text-xs">' + escHtml(item.unit) + '</td>';
     html += '<td class="px-4 py-3 text-xs text-gray-500">' + escHtml(item.category || '-') + '</td>';
@@ -721,8 +729,8 @@ function buildItemsPage() {
     html += '<div>' + imgHtml + '</div>';
     html += '<span class="px-2 py-0.5 rounded-full text-xs font-medium ' + sClass + '">' + sLabel + '</span></div>';
     html += '<div><p class="font-semibold text-gray-800 text-sm leading-snug">' + escHtml(item.name) + '</p>';
-    html += '<p class="text-xs text-gray-400 mt-0.5">' + escHtml(item.item_code) + ' • ' + escHtml(item.size || '') + '</p>';
-    html += '<p class="text-xs text-gray-500 mt-0.5">' + escHtml(item.category || '') + '</p></div>';
+    html += '<p class="text-xs text-gray-400 mt-0.5">' + escHtml(item.item_code) + ' • ' + escHtml(ITEM_TYPE_LABELS[item.item_type || 'consumable'] || ITEM_TYPE_LABELS.consumable) + '</p>';
+    html += '<p class="text-xs text-gray-500 mt-0.5">' + escHtml(ITEM_TYPE_LABELS[item.item_type || 'consumable'] || ITEM_TYPE_LABELS.consumable) + ' • ' + escHtml(item.category || '') + '</p></div>';
     html += '<div class="flex justify-between text-xs text-gray-500"><span>คงเหลือ</span><span class="font-bold text-gray-800">' + item.current_stock + ' ' + escHtml(item.unit) + '</span></div>';
     html += '<div class="flex gap-2 pt-1">';
     html += '<button onclick="showItemDetailModal(\'' + item.id + '\')" class="flex-1 btn-secondary btn-sm text-xs"><i class="fi fi-rr-eye mr-1"></i>ดู</button>';
@@ -741,11 +749,12 @@ function buildItemsPage() {
 }
 
 function filterItems(data, f) {
-  return data.filter(function(i) {
-    if (f.search && !i.name.toLowerCase().includes(f.search.toLowerCase()) && !(i.item_code || '').toLowerCase().includes(f.search.toLowerCase())) return false;
-    if (f.category !== 'all' && i.category !== f.category) return false;
-    if (f.stock === 'low' && i.current_stock > i.min_stock) return false;
-    if (f.stock === 'ok'  && i.current_stock <= i.min_stock) return false;
+  return data.filter(function(i) {
+    if (f.search && !i.name.toLowerCase().includes(f.search.toLowerCase()) && !(i.item_code || '').toLowerCase().includes(f.search.toLowerCase())) return false;
+    if (f.type !== 'all' && (i.item_type || 'consumable') !== f.type) return false;
+    if (f.category !== 'all' && i.category !== f.category) return false;
+    if (f.stock === 'low' && i.current_stock > i.min_stock) return false;
+    if (f.stock === 'ok'  && i.current_stock <= i.min_stock) return false;
     return true;
   });
 }
@@ -761,22 +770,24 @@ function paginate(data, page) {
 var _filterTimer;
 function debounceItemFilter() { clearTimeout(_filterTimer); _filterTimer = setTimeout(applyItemFilter, 400); }
 function applyItemFilter() {
-  var searchEl = document.getElementById('itemSearch');
-  var catEl = document.getElementById('itemCatFilter');
-  var stockEl = document.getElementById('itemStockFilter');
-  
-  _itemsFilter.search   = searchEl ? searchEl.value : '';
-  _itemsFilter.category = catEl ? catEl.value : 'all';
-  _itemsFilter.stock    = stockEl ? stockEl.value : 'all';
-  _itemsPage = 1;
+  var searchEl = document.getElementById('itemSearch');
+  var typeEl = document.getElementById('itemTypeFilter');
+  var catEl = document.getElementById('itemCatFilter');
+  var stockEl = document.getElementById('itemStockFilter');
+  
+  _itemsFilter.search   = searchEl ? searchEl.value : '';
+  _itemsFilter.type     = typeEl ? typeEl.value : 'all';
+  _itemsFilter.category = catEl ? catEl.value : 'all';
+  _itemsFilter.stock    = stockEl ? stockEl.value : 'all';
+  _itemsPage = 1;
   buildItemsPage();
 }
 
 function downloadCSVSample() {
-  var csv = 'รหัส,ชื่อวัสดุ,ขนาด,หน่วย,หมวดหมู่,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด\n';
-  csv += 'SUP-001,ถุงมือยาง (ไม่มีแป้ง) สีฟ้า,size S,กล่อง,อุปกรณ์ป้องกัน,20,5,ถุงมือยางไม่มีแป้งสำหรับงานทั่วไป\n';
-  csv += 'SUP-002,ถุงมือยาง (ไม่มีแป้ง) สีฟ้า,size M,กล่อง,อุปกรณ์ป้องกัน,15,5,ถุงมือยางไม่มีแป้งสำหรับงานทั่วไป\n';
-  csv += 'SUP-003,สำลี,200 g.,ถุง,วัสถุดิบทางการแพทย์,50,10,สำลีสะอาดบริสุทธิ์ 200 กรัม\n';
+  var csv = 'รหัส,ชื่อวัสดุ,ประเภท,ขนาด,หน่วย,หมวดหมู่,สถานะสภาพ,ติดตามSerial,Serials,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด\n';
+  csv += 'SUP-001,ถุงมือยาง (ไม่มีแป้ง) สีฟ้า,consumable,size S,กล่อง,อุปกรณ์ป้องกัน,,,,20,5,ถุงมือยางไม่มีแป้งสำหรับงานทั่วไป\n';
+  csv += 'SP-001,สายพานมอเตอร์,spare_part,,เส้น,อะไหล่เครื่องจักร,good,true,SP-001-A;SP-001-B,2,1,สายพานอะไหล่เครื่องจักร\n';
+  csv += 'SUP-003,สำลี,consumable,200 g.,ถุง,วัสถุดิบทางการแพทย์,,,,50,10,สำลีสะอาดบริสุทธิ์ 200 กรัม\n';
   var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   var link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
@@ -794,7 +805,7 @@ function openImportCSVModal() {
   body += '<p class="font-semibold mb-1">หมายเหตุ</p>';
   body += '<ul class="list-disc list-inside space-y-0.5">';
   body += '<li>รองรับไฟล์ .csv เท่านั้น (UTF-8)</li>';
-  body += '<li>คอลัมน์: รหัส,ชื่อวัสดุ,ขนาด,หน่วย,หมวดหมู่,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด</li>';
+  body += '<li>คอลัมน์หลัก: รหัส,ชื่อวัสดุ,ประเภท,ขนาด,หน่วย,หมวดหมู่,สถานะสภาพ,ติดตามSerial,Serials,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด</li>';
   body += '<li>หากไม่มีรหัส ระบบจะสร้างรหัสอัตโนมัติ</li>';
   body += '</ul></div>';
   body += '<div id="csvImportPreview"></div>';
@@ -816,10 +827,11 @@ function previewCSVImport() {
     var html = '<p class="text-sm font-medium text-gray-700 mb-2">ตัวอย่างข้อมูล (' + _csvImportRows.length + ' รายการ)</p>';
     html += '<div class="max-h-64 overflow-y-auto border border-gray-200 rounded-xl">';
     html += '<table class="w-full text-xs"><thead class="bg-gray-50 text-gray-600 sticky top-0">';
-    html += '<tr><th class="px-2 py-1.5 text-left">รหัส</th><th class="px-2 py-1.5 text-left">ชื่อ</th><th class="px-2 py-1.5 text-left">หน่วย</th><th class="px-2 py-1.5 text-center">สต็อก</th><th class="px-2 py-1.5 text-center">ขั้นต่ำ</th></tr></thead><tbody class="divide-y divide-gray-100">';
+    html += '<tr><th class="px-2 py-1.5 text-left">รหัส</th><th class="px-2 py-1.5 text-left">ชื่อ</th><th class="px-2 py-1.5 text-left">ประเภท</th><th class="px-2 py-1.5 text-left">หน่วย</th><th class="px-2 py-1.5 text-center">สต็อก</th><th class="px-2 py-1.5 text-center">ขั้นต่ำ</th></tr></thead><tbody class="divide-y divide-gray-100">';
     _csvImportRows.forEach(function(row) {
       html += '<tr><td class="px-2 py-1.5">' + escHtml(row['รหัส'] || '-') + '</td>';
       html += '<td class="px-2 py-1.5">' + escHtml(row['ชื่อวัสดุ'] || '') + '</td>';
+      html += '<td class="px-2 py-1.5">' + escHtml(ITEM_TYPE_LABELS[row['ประเภท'] || 'consumable'] || row['ประเภท'] || 'consumable') + '</td>';
       html += '<td class="px-2 py-1.5">' + escHtml(row['หน่วย'] || '') + '</td>';
       html += '<td class="px-2 py-1.5 text-center">' + escHtml(row['สต็อกเริ่มต้น'] || '0') + '</td>';
       html += '<td class="px-2 py-1.5 text-center">' + escHtml(row['สต็อกขั้นต่ำ'] || '5') + '</td></tr>';
@@ -854,15 +866,19 @@ function handleCSVImport() {
       var itemCode = row['รหัส'] || '';
       var name = row['ชื่อวัสดุ'] || '';
       if (!name) return Promise.resolve({ success: false, message: 'ขาดชื่อวัสดุ' });
-      var data = {
-        item_code: itemCode,
-        name: name,
-        size: row['ขนาด'] || '',
-        unit: row['หน่วย'] || 'ชิ้น',
-        category: row['หมวดหมู่'] || '',
-        current_stock: parseInt(row['สต็อกเริ่มต้น'] || 0),
-        min_stock: parseInt(row['สต็อกขั้นต่ำ'] || 5),
-        description: row['รายละเอียด'] || ''
+    var data = {
+      item_code: itemCode,
+      name: name,
+      item_type: row['ประเภท'] || 'consumable',
+      size: row['ขนาด'] || '',
+      unit: row['หน่วย'] || 'ชิ้น',
+      category: row['หมวดหมู่'] || '',
+      condition_status: row['สถานะสภาพ'] || '',
+      serial_tracking: String(row['ติดตามSerial'] || '').toLowerCase() === 'true',
+      spare_part_units: row['Serials'] || '',
+      current_stock: parseInt(row['สต็อกเริ่มต้น'] || 0),
+      min_stock: parseInt(row['สต็อกขั้นต่ำ'] || 5),
+      description: row['รายละเอียด'] || ''
       };
       return callAPI('addItem', AUTH.token, data);
     });
@@ -884,43 +900,71 @@ var _printQRFilter = { search: '', category: 'all' };
 
 function openAddItemModal() {
   _itemImageFileId = null;
-  var body = itemFormHTML({});
-  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
+  var body = itemFormHTML({});
+  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
     + '<button onclick="submitAddItem()" class="btn-primary"><i class="fi fi-rr-plus mr-1"></i>เพิ่มวัสดุ</button>';
-  openModal('เพิ่มรายการวัสดุใหม่', body, footer);
+  openModal('เพิ่มรายการวัสดุใหม่', body, footer);
+  toggleItemFormTypeFields();
 }
 function openEditItemModal(id) {
-  var item = _itemsData.find(function(i) { return i.id === id; });
-  if (!item) return;
-  _itemImageFileId = item.image_file_id || null;
-  var body = itemFormHTML(item);
-  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
-    + '<button onclick="submitEditItem(\'' + id + '\')" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึก</button>';
-  openModal('แก้ไขรายการวัสดุ', body, footer);
+  var item = _itemsData.find(function(i) { return i.id === id; });
+  if (!item) return;
+  _itemImageFileId = item.image_file_id || null;
+  var body = itemFormHTML(item);
+  var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
+    + '<button onclick="submitEditItem(\'' + id + '\')" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึก</button>';
+  openModal('แก้ไขรายการวัสดุ', body, footer);
+  toggleItemFormTypeFields();
 }
 function itemFormHTML(item) {
-  var fid = _itemImageFileId || item.image_file_id || '';
-  var imgSection = '';
-  if (fid) {
-    var imgSrc = imgUrl(fid);
-    imgSection = '<div class="sm:col-span-2"><label class="form-label">รูปภาพวัสดุ</label><div class="flex items-center gap-3"><img id="itemImgPreview" src="' + (imgSrc || '') + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200"><button onclick="removeItemImage()" type="button" class="text-red-500 text-sm hover:underline">ลบรูป</button></div><input type="hidden" id="itemImageFileId" value="' + fid + '"></div>';
-  } else {
-    imgSection = '<div class="sm:col-span-2"><label class="form-label">รูปภาพวัสดุ</label><input type="file" id="itemImageFile" accept="image/*" onchange="handleItemImageUpload(this)" class="form-input py-1.5"><p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 5MB)</p><div id="itemImagePreview"></div></div>';
-  }
-  return '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'
-    + fieldHTML('ชื่อวัสดุ *', 'itemName', 'text', item.name || '', 'sm:col-span-2')
-    + fieldHTML('ขนาดบรรจุ', 'itemSize', 'text', item.size || '')
-    + fieldHTML('หน่วย *', 'itemUnit', 'text', item.unit || '')
-    + fieldHTML('หมวดหมู่', 'itemCategory', 'text', item.category || 'วัสดุทำความสะอาด')
-    + fieldHTML('สต็อกเริ่มต้น', 'itemStock', 'number', item.current_stock || 0)
-    + fieldHTML('สต็อกขั้นต่ำ', 'itemMinStock', 'number', item.min_stock || 5)
-    + imgSection
-    + '</div>';
+  var fid = _itemImageFileId || item.image_file_id || '';
+  var imgSection = '';
+  if (fid) {
+    var imgSrc = imgUrl(fid);
+    imgSection = '<div class="sm:col-span-2"><label class="form-label">รูปภาพวัสดุ</label><div class="flex items-center gap-3"><img id="itemImgPreview" src="' + (imgSrc || '') + '" class="w-24 h-24 object-cover rounded-xl border border-gray-200"><button onclick="removeItemImage()" type="button" class="text-red-500 text-sm hover:underline">ลบรูป</button></div><input type="hidden" id="itemImageFileId" value="' + fid + '"></div>';
+  } else {
+    imgSection = '<div class="sm:col-span-2"><label class="form-label">รูปภาพวัสดุ</label><input type="file" id="itemImageFile" accept="image/*" onchange="handleItemImageUpload(this)" class="form-input py-1.5"><p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 5MB)</p><div id="itemImagePreview"></div></div>';
+  }
+  var type = item.item_type || 'consumable';
+  var condition = item.condition_status || '';
+  var serials = item.spare_part_units || '';
+  return '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'
+    + fieldHTML('ชื่อวัสดุ *', 'itemName', 'text', item.name || '', 'sm:col-span-2')
+    + '<div><label class="form-label">ประเภท *</label><select id="itemType" onchange="toggleItemFormTypeFields()" class="form-input"><option value="consumable"' + (type === 'consumable' ? ' selected' : '') + '>วัสดุสิ้นเปลือง</option><option value="spare_part"' + (type === 'spare_part' ? ' selected' : '') + '>อะไหล่เครื่องจักร</option></select></div>'
+    + fieldHTML('ขนาดบรรจุ', 'itemSize', 'text', item.size || '')
+    + fieldHTML('หน่วย *', 'itemUnit', 'text', item.unit || '')
+    + fieldHTML('หมวดหมู่', 'itemCategory', 'text', item.category || 'วัสดุทำความสะอาด')
+    + '<div class="item-consumable-field">' + fieldHTML('สต็อกเริ่มต้น', 'itemStock', 'number', item.current_stock || 0) + '</div>'
+    + fieldHTML('สต็อกขั้นต่ำ', 'itemMinStock', 'number', item.min_stock || 5)
+    + '<div class="item-spare-field sm:col-span-2"><div class="rounded-xl border border-violet-100 bg-violet-50/60 p-4 space-y-4"><div><label class="form-label">สถานะสภาพ *</label><select id="itemCondition" class="form-input"><option value="">- เลือกสถานะ -</option><option value="new"' + (condition === 'new' ? ' selected' : '') + '>ใหม่</option><option value="good"' + (condition === 'good' ? ' selected' : '') + '>พร้อมใช้</option><option value="standby"' + (condition === 'standby' ? ' selected' : '') + '>สำรอง</option><option value="used"' + (condition === 'used' ? ' selected' : '') + '>ใช้งานแล้ว</option><option value="damaged"' + (condition === 'damaged' ? ' selected' : '') + '>ชำรุด</option><option value="repair"' + (condition === 'repair' ? ' selected' : '') + '>รอซ่อม</option></select></div><label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" id="itemSerialTracking" onchange="toggleItemSerialFields()" class="accent-navy-600"' + (item.serial_tracking ? ' checked' : '') + '>ติดตาม Serial / Item-level</label><div class="item-serial-field"><label class="form-label">Serial No. / รหัสแต่ละชิ้น</label><textarea id="itemSerials" rows="4" class="form-input" placeholder="ใส่ 1 บรรทัดต่อ 1 ชิ้น">' + escHtml(serials) + '</textarea><p class="text-xs text-gray-400 mt-1">รายการนี้จะเก็บแยกจากสต็อก รวมไว้เพื่อดูประวัติแต่ละชิ้น</p></div></div></div>'
+    + imgSection
+    + '</div>';
 }
 function fieldHTML(label, id, type, value, extra) {
-  return '<div class="' + (extra || '') + '">'
-    + '<label class="form-label">' + escHtml(label) + '</label>'
-    + '<input type="' + type + '" id="' + id + '" value="' + escHtml(String(value)) + '" class="form-input"></div>';
+  return '<div class="' + (extra || '') + '">'
+    + '<label class="form-label">' + escHtml(label) + '</label>'
+    + '<input type="' + type + '" id="' + id + '" value="' + escHtml(String(value)) + '" class="form-input"></div>';
+}
+
+function toggleItemFormTypeFields() {
+  var typeEl = document.getElementById('itemType');
+  var type = typeEl ? typeEl.value : 'consumable';
+  document.querySelectorAll('.item-spare-field').forEach(function(el) {
+    el.style.display = type === 'spare_part' ? '' : 'none';
+  });
+  document.querySelectorAll('.item-consumable-field').forEach(function(el) {
+    el.style.display = type === 'consumable' ? '' : 'none';
+  });
+  toggleItemSerialFields();
+}
+
+function toggleItemSerialFields() {
+  var typeEl = document.getElementById('itemType');
+  var serialEl = document.getElementById('itemSerialTracking');
+  var show = typeEl && typeEl.value === 'spare_part' && serialEl && serialEl.checked;
+  document.querySelectorAll('.item-serial-field').forEach(function(el) {
+    el.style.display = show ? '' : 'none';
+  });
 }
 
 function submitAddItem() {
@@ -944,26 +988,40 @@ function submitEditItem(id) {
   }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
 }
 function readItemForm() {
-  var nameEl = document.getElementById('itemName');
-  var unitEl = document.getElementById('itemUnit');
-  var sizeEl = document.getElementById('itemSize');
-  var catEl = document.getElementById('itemCategory');
-  var stockEl = document.getElementById('itemStock');
-  var minEl = document.getElementById('itemMinStock');
-  var imgIdEl = document.getElementById('itemImageFileId');
+  var nameEl = document.getElementById('itemName');
+  var unitEl = document.getElementById('itemUnit');
+  var sizeEl = document.getElementById('itemSize');
+  var catEl = document.getElementById('itemCategory');
+  var typeEl = document.getElementById('itemType');
+  var stockEl = document.getElementById('itemStock');
+  var minEl = document.getElementById('itemMinStock');
+  var conditionEl = document.getElementById('itemCondition');
+  var serialTrackEl = document.getElementById('itemSerialTracking');
+  var serialsEl = document.getElementById('itemSerials');
+  var imgIdEl = document.getElementById('itemImageFileId');
   
-  var name = nameEl ? nameEl.value : '';
-  var unit = unitEl ? unitEl.value : '';
-  if (!name.trim()) { showError('กรุณากรอกชื่อวัสดุ'); return null; }
-  if (!unit.trim()) { showError('กรุณากรอกหน่วย'); return null; }
-  
-  return {
-    name: name, size: sizeEl ? sizeEl.value : '',
-    unit: unit, category: catEl ? catEl.value : '',
-    current_stock: stockEl ? parseInt(stockEl.value) || 0 : 0,
-    min_stock: minEl ? parseInt(minEl.value) || 5 : 5,
-    image_file_id: imgIdEl ? imgIdEl.value : _itemImageFileId || ''
-  };
+  var name = nameEl ? nameEl.value : '';
+  var unit = unitEl ? unitEl.value : '';
+  var itemType = typeEl ? typeEl.value : 'consumable';
+  var condition = conditionEl ? conditionEl.value : '';
+  var serialTracking = serialTrackEl ? serialTrackEl.checked : false;
+  var serials = serialsEl ? (serialsEl.value || '') : '';
+  if (!name.trim()) { showError('กรุณากรอกชื่อวัสดุ'); return null; }
+  if (!unit.trim()) { showError('กรุณากรอกหน่วย'); return null; }
+  if (itemType === 'spare_part' && !condition) { showError('กรุณาเลือกสถานะสภาพของอะไหล่'); return null; }
+  if (itemType === 'spare_part' && serialTracking && !serials.trim()) { showError('กรุณาระบุ Serial อย่างน้อย 1 รายการ'); return null; }
+  
+  return {
+    name: name, size: sizeEl ? sizeEl.value : '',
+    unit: unit, category: catEl ? catEl.value : '',
+    item_type: itemType,
+    current_stock: stockEl ? parseInt(stockEl.value) || 0 : 0,
+    min_stock: minEl ? parseInt(minEl.value) || 5 : 5,
+    condition_status: condition,
+    serial_tracking: serialTracking,
+    spare_part_units: serialTracking ? JSON.stringify(serials.split(/\r?\n/).map(function(s){ return s.trim(); }).filter(Boolean)) : '',
+    image_file_id: imgIdEl ? imgIdEl.value : _itemImageFileId || ''
+  };
 }
 function handleItemImageUpload(input) {
   var file = input.files[0];
@@ -990,17 +1048,29 @@ function handleItemImageUpload(input) {
   reader.readAsDataURL(file);
 }
 function removeItemImage() {
-  _itemImageFileId = null;
-  var name = document.getElementById('itemName') ? document.getElementById('itemName').value : '';
-  var size = document.getElementById('itemSize') ? document.getElementById('itemSize').value : '';
-  var unit = document.getElementById('itemUnit') ? document.getElementById('itemUnit').value : '';
-  var cat  = document.getElementById('itemCategory') ? document.getElementById('itemCategory').value : '';
-  var stock = document.getElementById('itemStock') ? document.getElementById('itemStock').value : 0;
-  var min   = document.getElementById('itemMinStock') ? document.getElementById('itemMinStock').value : 5;
-  var fakeItem = { name: name, size: size, unit: unit, category: cat, current_stock: stock, min_stock: min, image_file_id: '' };
-  var body = itemFormHTML(fakeItem);
-  var bodyEl = document.getElementById('modalBody');
-  if (bodyEl) bodyEl.innerHTML = body;
+  _itemImageFileId = null;
+  var name = document.getElementById('itemName') ? document.getElementById('itemName').value : '';
+  var size = document.getElementById('itemSize') ? document.getElementById('itemSize').value : '';
+  var unit = document.getElementById('itemUnit') ? document.getElementById('itemUnit').value : '';
+  var cat  = document.getElementById('itemCategory') ? document.getElementById('itemCategory').value : '';
+  var stock = document.getElementById('itemStock') ? document.getElementById('itemStock').value : 0;
+  var min   = document.getElementById('itemMinStock') ? document.getElementById('itemMinStock').value : 5;
+  var typeEl = document.getElementById('itemType');
+  var conditionEl = document.getElementById('itemCondition');
+  var serialTrackEl = document.getElementById('itemSerialTracking');
+  var serialsEl = document.getElementById('itemSerials');
+  var fakeItem = {
+    name: name, size: size, unit: unit, category: cat,
+    item_type: typeEl ? typeEl.value : 'consumable',
+    condition_status: conditionEl ? conditionEl.value : '',
+    serial_tracking: serialTrackEl ? serialTrackEl.checked : false,
+    spare_part_units: serialsEl ? serialsEl.value : '',
+    current_stock: stock, min_stock: min, image_file_id: ''
+  };
+  var body = itemFormHTML(fakeItem);
+  var bodyEl = document.getElementById('modalBody');
+  if (bodyEl) bodyEl.innerHTML = body;
+  toggleItemFormTypeFields();
 }
 
 function deleteItemConfirm(id, name) {
@@ -1037,13 +1107,35 @@ function showItemDetailModal(itemId) {
     + (item.size ? '<p class="text-sm text-gray-500 mt-1">' + escHtml(item.size) + '</p>' : '')
     + '</div>';
 
-  body += '<div class="space-y-3">';
-  body += '<div class="grid grid-cols-2 gap-3">'
-    + '<div class="bg-gray-50 rounded-xl p-3 text-center"><p class="text-xs text-gray-400 mb-1">หมวดหมู่</p><p class="text-sm font-semibold text-gray-700">' + escHtml(item.category || '-') + '</p></div>'
-    + '<div class="bg-gray-50 rounded-xl p-3 text-center"><p class="text-xs text-gray-400 mb-1">หน่วย</p><p class="text-sm font-semibold text-gray-700">' + escHtml(item.unit) + '</p></div>'
-    + '</div>';
+  body += '<div class="space-y-3">';
+  body += '<div class="grid grid-cols-2 gap-3">'
+    + '<div class="bg-gray-50 rounded-xl p-3 text-center"><p class="text-xs text-gray-400 mb-1">หมวดหมู่</p><p class="text-sm font-semibold text-gray-700">' + escHtml(item.category || '-') + '</p></div>'
+    + '<div class="bg-gray-50 rounded-xl p-3 text-center"><p class="text-xs text-gray-400 mb-1">ประเภท</p><p class="text-sm font-semibold text-gray-700">' + escHtml(ITEM_TYPE_LABELS[item.item_type || 'consumable'] || ITEM_TYPE_LABELS.consumable) + '</p></div>'
+    + '<div class="bg-gray-50 rounded-xl p-3 text-center"><p class="text-xs text-gray-400 mb-1">หน่วย</p><p class="text-sm font-semibold text-gray-700">' + escHtml(item.unit) + '</p></div>'
+    + '</div>';
 
-  body += '<div class="bg-white border border-gray-200 rounded-xl p-4">'
+  if (item.item_type === 'spare_part') {
+    body += '<div class="grid grid-cols-2 gap-3">'
+      + '<div class="bg-violet-50 rounded-xl p-3 text-center border border-violet-100"><p class="text-xs text-violet-500 mb-1">สถานะสภาพ</p><p class="text-sm font-semibold text-violet-700">' + escHtml(ITEM_CONDITION_LABELS[item.condition_status || ''] || '-') + '</p></div>'
+      + '<div class="bg-violet-50 rounded-xl p-3 text-center border border-violet-100"><p class="text-xs text-violet-500 mb-1">ติดตาม Serial</p><p class="text-sm font-semibold text-violet-700">' + (item.serial_tracking ? 'เปิดใช้งาน' : 'ไม่ติดตาม') + '</p></div>'
+      + '</div>';
+    if (item.spare_part_units) {
+      var serialList = [];
+      try { serialList = JSON.parse(item.spare_part_units); } catch(e) { serialList = String(item.spare_part_units).split(/\r?\n/); }
+      serialList = (serialList || []).filter(function(s) { return String(s || '').trim(); });
+      if (serialList.length) {
+        body += '<div class="bg-white border border-gray-200 rounded-xl p-4">'
+          + '<p class="text-xs font-semibold text-gray-500 mb-2">รายการ Serial / Item-level</p>'
+          + '<div class="flex flex-wrap gap-2">';
+        serialList.forEach(function(serial) {
+          body += '<span class="px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-medium">' + escHtml(serial) + '</span>';
+        });
+        body += '</div></div>';
+      }
+    }
+  }
+
+  body += '<div class="bg-white border border-gray-200 rounded-xl p-4">'
     + '<div class="flex items-center justify-between mb-2">'
     + '<span class="text-sm text-gray-500">คงเหลือในระบบ</span>'
     + '<span class="text-xl font-bold text-gray-800">' + item.current_stock + ' <span class="text-sm font-normal text-gray-500">' + item.unit + '</span></span>'
@@ -1650,7 +1742,7 @@ function buildWithdrawPage() {
     html += '<td class="px-4 py-2.5 text-center text-xs"><span class="text-gray-800 font-bold">' + w.quantity_requested + '</span>';
     if (w.status === 'approved') html += '<span class="text-green-600 ml-1">/' + w.quantity_approved + '</span>';
     html += ' <span class="text-gray-400">' + escHtml(w.unit) + '</span></td>';
-    html += '<td class="px-4 py-2.5 text-xs text-gray-500 max-w-xs truncate">' + escHtml(w.purpose || '-') + '</td>';
+    html += '<td class="px-4 py-2.5 text-xs text-gray-500 max-w-xs truncate">' + escHtml(getWithdrawReasonLabel(w.purpose)) + '</td>';
     html += '<td class="px-4 py-2.5 text-xs text-gray-600">' + escHtml(w.requested_by_name || '-') + '</td>';
     html += '<td class="px-4 py-2.5 text-center"><span class="px-2 py-0.5 rounded-full text-xs font-medium ' + badgeClass + '">' + statusLabel + '</span></td>';
     html += '<td class="px-4 py-2.5 text-center"><div class="flex gap-1 justify-center">';
@@ -1911,7 +2003,7 @@ function buildApprovePage(filterStatus) {
       html += '<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-gray-500">';
       html += '<span><i class="fi fi-rr-user mr-1"></i>' + escHtml(w.requested_by_name || '-') + '</span>';
       html += '<span><i class="fi fi-rr-layers mr-1"></i>' + w.quantity_requested + ' ' + escHtml(w.unit) + '</span>';
-      html += '<span><i class="fi fi-rr-target mr-1"></i>' + escHtml(w.purpose || '-') + '</span>';
+      html += '<span><i class="fi fi-rr-target mr-1"></i>' + escHtml(getWithdrawReasonLabel(w.purpose)) + '</span>';
       html += '<span><i class="fi fi-rr-calendar-day mr-1"></i>' + formatDate(w.requested_at) + '</span>';
       html += '</div>';
       if (w.status === 'approved') {
@@ -1945,7 +2037,7 @@ function openApproveModal(wdId, qty) {
   var body = '<div class="space-y-4">';
   body += imgHtml;
   body += '<div class="text-center"><p class="font-semibold text-gray-800">' + escHtml((wd && wd.item_name) || '-') + '</p>';
-  body += '<p class="text-xs text-gray-500">ผู้ขอเบิก: <b>' + escHtml((wd && wd.requested_by_name) || '-') + '</b> • วัตถุประสงค์: ' + escHtml((wd && wd.purpose) || '-') + '</p></div>';
+  body += '<p class="text-xs text-gray-500">ผู้ขอเบิก: <b>' + escHtml((wd && wd.requested_by_name) || '-') + '</b> • เหตุผล: ' + escHtml(getWithdrawReasonLabel((wd && wd.purpose) || '-')) + '</p></div>';
   body += '<div><label class="form-label">จำนวนที่อนุมัติ *</label>';
   body += '<input type="number" id="approveQty" value="' + qty + '" min="1" max="' + qty + '" class="form-input">';
   body += '<p class="text-xs text-gray-400 mt-1">จำนวนที่ขอ: ' + qty + ' ' + escHtml((wd && wd.unit) || '') + '</p></div></div>';
@@ -2263,7 +2355,7 @@ function loadWithdrawReport() {
       html += '<td class="px-4 py-2 text-gray-700">' + escHtml(w.item_name || '-') + '</td>';
       html += '<td class="px-4 py-2 text-center text-xs">' + w.quantity_requested + (w.quantity_approved ? '/' + w.quantity_approved : '') + ' ' + escHtml(w.unit || '') + '</td>';
       html += '<td class="px-4 py-2 text-xs text-gray-500">' + escHtml(w.requested_by_name || '-') + '</td>';
-      html += '<td class="px-4 py-2 text-xs text-gray-400">' + escHtml(w.purpose || '-') + '</td>';
+      html += '<td class="px-4 py-2 text-xs text-gray-400">' + escHtml(getWithdrawReasonLabel(w.purpose)) + '</td>';
       html += '<td class="px-4 py-2 text-center"><span class="px-2 py-0.5 rounded-full text-xs ' + bc + '">' + sl + '</span></td></tr>';
     });
     if (data.length > 50) html += '<tr><td colspan="7" class="text-center py-3 text-xs text-gray-400">แสดง 50 รายการแรก Export เพื่อดูทั้งหมด</td></tr>';
@@ -2358,7 +2450,7 @@ function exportReport(type) {
       rows = data.map(function(r) { var item = _itemsData.find(function(i) { return i.id === r.item_id; }) || {}; return { receive_no: r.receive_no || '', date: (r.date || '').split('T')[0], item_name: item.name || r.item_id, quantity: r.quantity || 0, created_by_name: r.created_by_name || '', note: r.note || '' }; });
     } else {
       headers = [{ key: 'withdraw_no', title: 'เลขที่' }, { key: 'date', title: 'วันที่' }, { key: 'item_name', title: 'รายการ' }, { key: 'quantity', title: 'จำนวน' }, { key: 'requester_name', title: 'ผู้เบิก' }, { key: 'status', title: 'สถานะ' }, { key: 'purpose', title: 'วัตถุประสงค์' }];
-      rows = data.map(function(w) { var item = _itemsData.find(function(i) { return i.id === w.item_id; }) || {}; return { withdraw_no: w.withdraw_no || '', date: (w.date || '').split('T')[0], item_name: item.name || w.item_id, quantity: w.quantity || 0, requester_name: w.requester_name || '', status: w.status === 'approved' ? 'อนุมัติ' : w.status === 'rejected' ? 'ปฏิเสธ' : 'รออนุมัติ', purpose: w.purpose || '' }; });
+      rows = data.map(function(w) { var item = _itemsData.find(function(i) { return i.id === w.item_id; }) || {}; return { withdraw_no: w.withdraw_no || '', date: (w.date || '').split('T')[0], item_name: item.name || w.item_id, quantity: w.quantity || 0, requester_name: w.requester_name || '', status: w.status === 'approved' ? 'อนุมัติ' : w.status === 'rejected' ? 'ปฏิเสธ' : 'รออนุมัติ', purpose: getWithdrawReasonLabel(w.purpose) }; });
     }
     downloadXlsx(rows, headers, 'รายงาน_' + type);
   }).catch(function() { hideLoading(); showError('Export ไม่สำเร็จ'); });
@@ -2725,3 +2817,253 @@ callAPI('getConfig').then(function(res) {
     }
   });
 }; // 🟢 บรรทัดนี้ปิด window.onload ตัวใหญ่สุด
+
+// ===== WITHDRAW BATCH BUILDER (multi-item requisition) =====
+var _wdDraftItems = [];
+var _wdDraftViaQr = false;
+var _wdDraftSearch = '';
+
+function getWithdrawReasonLabel(value) {
+  var map = {
+    use_general: 'ใช้ทั่วไป',
+    machine_repair: 'ซ่อมเครื่องจักร',
+    pm_replace: 'เปลี่ยนตามรอบ PM',
+    urgent: 'ฉุกเฉิน',
+    'ใช้งานทั่วไป': 'ใช้ทั่วไป',
+    'ซ่อมเครื่องจักร': 'ซ่อมเครื่องจักร',
+    'เปลี่ยนตามรอบ PM': 'เปลี่ยนตามรอบ PM',
+    'ฉุกเฉิน': 'ฉุกเฉิน'
+  };
+  return map[value] || value || '-';
+}
+
+function openWithdrawSelectModal() {
+  openWithdrawBatchModal('', false);
+}
+
+function openWithdrawModal(itemId) {
+  openWithdrawBatchModal(itemId, false);
+}
+
+function openWithdrawFromQR(itemId) {
+  openWithdrawBatchModal(itemId, true);
+}
+
+function openWithdrawBatchModal(itemId, viaQr) {
+  _wdDraftViaQr = !!viaQr;
+  _wdDraftItems = [];
+
+  function renderBuilder() {
+    if (itemId) _wdDraftAddItem(itemId);
+    var reasonOptions = ''
+      + '<option value="use_general">ใช้ทั่วไป</option>'
+      + '<option value="machine_repair">ซ่อมเครื่องจักร</option>'
+      + '<option value="pm_replace">เปลี่ยนตามรอบ PM</option>'
+      + '<option value="urgent">ฉุกเฉิน</option>';
+    var body = '';
+    body += '<div class="space-y-4">';
+    body += '<div class="space-y-2">';
+    body += '<label class="form-label">ค้นหารายการวัสดุ</label>';
+    body += '<div class="relative">';
+    body += '<i class="fi fi-rr-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>';
+    body += '<input type="text" id="wdDraftSearch" oninput="wdDraftRenderCatalog()" placeholder="พิมพ์ชื่อวัสดุหรือรหัส..." class="form-input pl-9">';
+    body += '</div>';
+    body += '</div>';
+    body += '<div>';
+    body += '<div class="flex items-center justify-between mb-2">';
+    body += '<p class="form-label mb-0">รายการที่เลือก</p>';
+    body += '<span id="wdDraftCount" class="text-xs text-gray-400"></span>';
+    body += '</div>';
+    body += '<div id="wdDraftSelected" class="space-y-2"></div>';
+    body += '</div>';
+    body += '<div class="space-y-2">';
+    body += '<div class="flex items-center justify-between">';
+    body += '<p class="form-label mb-0">รายการวัสดุทั้งหมด</p>';
+    body += '<span class="text-xs text-gray-400">กด <i class="fi fi-rr-plus"></i> เพื่อเพิ่มเข้ารายการเบิก</span>';
+    body += '</div>';
+    body += '<div id="wdDraftCatalog" class="max-h-56 overflow-y-auto space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-2"></div>';
+    body += '</div>';
+    body += '<div class="grid grid-cols-1 gap-4">';
+    body += '<div><label class="form-label">เหตุผลการเบิก *</label><select id="wdReason" class="form-input"><option value="">- เลือกเหตุผล -</option>' + reasonOptions + '</select></div>';
+    body += '<div><label class="form-label">หมายเหตุ</label><textarea id="wdNote" class="form-input" rows="2" placeholder="หมายเหตุเพิ่มเติม..."></textarea></div>';
+    body += '</div>';
+    body += '</div>';
+
+    var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
+      + '<button onclick="submitWithdraw()" class="btn-primary"><i class="fi fi-rr-inbox-out mr-1"></i>ยื่นคำขอเบิก</button>';
+    openModal('เบิกวัสดุ', body, footer);
+    wdDraftRenderAll();
+    var searchEl = document.getElementById('wdDraftSearch');
+    if (searchEl) searchEl.focus();
+  }
+
+  if (_itemsData.length > 0 && (Date.now() - _itemsCacheTime) < ITEMS_CACHE_TTL) {
+    renderBuilder();
+    return;
+  }
+
+  showLoading('โหลดข้อมูล...');
+  callAPI('getItems', AUTH.token).then(function(res) {
+    hideLoading();
+    _itemsData = res.data || [];
+    _itemsCacheTime = Date.now();
+    renderBuilder();
+  }).catch(function() {
+    hideLoading();
+    showError('โหลดข้อมูลไม่สำเร็จ');
+  });
+}
+
+function wdDraftAddItem(itemId) {
+  var item = _itemsData.find(function(i) { return i.id === itemId; });
+  if (!item) return;
+  if (_wdDraftItems.find(function(x) { return x.item_id === itemId; })) return;
+  _wdDraftItems.push({
+    item_id: item.id,
+    item_name: item.name,
+    item_code: item.item_code,
+    unit: item.unit,
+    current_stock: item.current_stock || 0,
+    quantity: 1
+  });
+  wdDraftRenderAll();
+}
+
+function wdDraftRemoveItem(itemId) {
+  _wdDraftItems = _wdDraftItems.filter(function(x) { return x.item_id !== itemId; });
+  wdDraftRenderAll();
+}
+
+function wdDraftUpdateQty(itemId, value) {
+  var qty = parseInt(value, 10);
+  if (!qty || qty < 1) qty = 1;
+  _wdDraftItems = _wdDraftItems.map(function(x) {
+    if (x.item_id !== itemId) return x;
+    return Object.assign({}, x, { quantity: qty });
+  });
+  wdDraftRenderSelected();
+}
+
+function wdDraftRenderAll() {
+  wdDraftRenderCatalog();
+  wdDraftRenderSelected();
+}
+
+function wdDraftRenderCatalog() {
+  var searchEl = document.getElementById('wdDraftSearch');
+  _wdDraftSearch = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  var wrap = document.getElementById('wdDraftCatalog');
+  if (!wrap) return;
+
+  var data = _itemsData.filter(function(i) {
+    if (i.active === false) return false;
+    if (!_wdDraftSearch) return true;
+    return (i.name || '').toLowerCase().indexOf(_wdDraftSearch) !== -1
+      || (i.item_code || '').toLowerCase().indexOf(_wdDraftSearch) !== -1
+      || (i.category || '').toLowerCase().indexOf(_wdDraftSearch) !== -1;
+  });
+
+  if (data.length === 0) {
+    wrap.innerHTML = '<p class="text-center text-sm text-gray-400 py-4">ไม่พบรายการ</p>';
+    return;
+  }
+
+  wrap.innerHTML = data.map(function(i) {
+    var selected = _wdDraftItems.some(function(x) { return x.item_id === i.id; });
+    var stockClass = getStockClass(i.current_stock, i.min_stock);
+    return '<div class="flex items-center gap-3 rounded-xl bg-white border border-gray-200 px-3 py-2 shadow-sm">'
+      + '<div class="flex-1 min-w-0">'
+      + '<p class="text-sm font-medium text-gray-800 truncate">' + escHtml(i.name) + '</p>'
+      + '<p class="text-xs text-gray-400">' + escHtml(i.item_code || '-') + ' • คงเหลือ ' + (i.current_stock || 0) + ' ' + escHtml(i.unit || '') + '</p>'
+      + '</div>'
+      + '<span class="px-2 py-0.5 rounded-full text-xs font-medium ' + stockClass + '">' + getStockLabel(i.current_stock, i.min_stock) + '</span>'
+      + '<button type="button" onclick="wdDraftAddItem(\'' + i.id + '\')" class="btn-primary btn-sm text-xs ' + (selected ? 'opacity-60 pointer-events-none' : '') + '">'
+      + '<i class="fi fi-rr-plus mr-1"></i>' + (selected ? 'เพิ่มแล้ว' : 'เพิ่ม')
+      + '</button>'
+      + '</div>';
+  }).join('');
+}
+
+function wdDraftRenderSelected() {
+  var wrap = document.getElementById('wdDraftSelected');
+  var countEl = document.getElementById('wdDraftCount');
+  if (countEl) countEl.textContent = _wdDraftItems.length ? (_wdDraftItems.length + ' รายการ') : 'ยังไม่ได้เพิ่มรายการ';
+  if (!wrap) return;
+
+  if (_wdDraftItems.length === 0) {
+    wrap.innerHTML = '<div class="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-400">กดเพิ่มรายการเบิกจากรายการวัสดุด้านล่าง</div>';
+    return;
+  }
+
+  wrap.innerHTML = _wdDraftItems.map(function(x) {
+    var item = _itemsData.find(function(i) { return i.id === x.item_id; }) || x;
+    var overStock = x.quantity > (item.current_stock || 0);
+    return '<div class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">'
+      + '<div class="flex items-start gap-3">'
+      + '<div class="flex-1 min-w-0">'
+      + '<p class="text-sm font-medium text-gray-800 truncate">' + escHtml(item.name || x.item_name || '-') + '</p>'
+      + '<p class="text-xs text-gray-400">' + escHtml(item.item_code || x.item_code || '-') + ' • คงเหลือ ' + (item.current_stock || 0) + ' ' + escHtml(item.unit || x.unit || '') + '</p>'
+      + '</div>'
+      + '<button type="button" onclick="wdDraftRemoveItem(\'' + x.item_id + '\')" class="text-red-500 hover:text-red-700" title="ลบรายการ"><i class="fi fi-rr-trash"></i></button>'
+      + '</div>'
+      + '<div class="mt-3 grid grid-cols-[1fr_110px] gap-3 items-end">'
+      + '<div class="min-w-0">'
+      + '<label class="form-label">จำนวนที่ต้องการเบิก</label>'
+      + '<input type="number" min="1" value="' + x.quantity + '" oninput="wdDraftUpdateQty(\'' + x.item_id + '\', this.value)" class="form-input ' + (overStock ? 'border-red-300 focus:ring-red-500' : '') + '">'
+      + '</div>'
+      + '<div class="text-right text-xs ' + (overStock ? 'text-red-600' : 'text-gray-400') + '">' + (overStock ? 'เกินสต็อก' : 'พร้อมเบิก') + '</div>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function submitWithdraw() {
+  var reasonEl = document.getElementById('wdReason');
+  var noteEl = document.getElementById('wdNote');
+  var purpose = reasonEl ? reasonEl.value.trim() : '';
+  var note = noteEl ? noteEl.value.trim() : '';
+
+  if (!purpose) { showError('กรุณาระบุวัตถุประสงค์'); return; }
+  if (_wdDraftItems.length === 0) { showError('กรุณาเพิ่มรายการวัสดุอย่างน้อย 1 รายการ'); return; }
+
+  for (var i = 0; i < _wdDraftItems.length; i++) {
+    var row = _wdDraftItems[i];
+    var item = _itemsData.find(function(x) { return x.id === row.item_id; });
+    if (!item) { showError('ไม่พบรายการวัสดุบางรายการ'); return; }
+    if (!row.quantity || row.quantity <= 0) { showError('จำนวนต้องมากกว่า 0'); return; }
+    if (row.quantity > (item.current_stock || 0)) {
+      showError('จำนวนเบิกของ "' + item.name + '" เกินสต็อกคงเหลือ');
+      return;
+    }
+  }
+
+  showLoading('กำลังยื่นคำขอ...');
+  var payload = {
+    items: _wdDraftItems.map(function(x) {
+      return { item_id: x.item_id, quantity: x.quantity };
+    }),
+    purpose: purpose,
+    note: note,
+    via_qr: _wdDraftViaQr
+  };
+
+  callAPI('addWithdrawal', AUTH.token, payload).then(function(res) {
+    hideLoading();
+    closeModal();
+    if (res.success) {
+      var msg = 'ยื่นคำขอเบิกเรียบร้อย';
+      if (res.withdraw_no) msg += ' #' + res.withdraw_no;
+      if (res.items_count) msg += ' (' + res.items_count + ' รายการ)';
+      showSuccess(msg);
+      _wdDraftItems = [];
+      if (_currentPage === 'withdraw') renderWithdraw();
+      else if (_currentPage === 'dashboard') renderDashboard();
+    } else {
+      showError(res.message);
+    }
+  }).catch(function() {
+    hideLoading();
+    showError('เกิดข้อผิดพลาด');
+  });
+}
+

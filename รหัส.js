@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // ระบบวัสดุสิ้นเปลือง (Consumable Supplies Management System)
 // Version: 1.1 | แก้ไขบั๊กปรับยอดสต็อกไม่เปลี่ยน + แก้ไขสิทธิ์ CORS
 // ============================================================
@@ -242,8 +242,14 @@ function initializeSheets() {
         size: item.size,
         unit: item.unit,
         category: item.category,
+        item_type: item.item_type || 'consumable',
+        part_no: item.part_no || '',
+        machine_name: item.machine_name || '',
+        condition_status: item.condition_status || '',
+        serial_tracking: item.serial_tracking || false,
         current_stock: item.stock,
         min_stock: item.min_stock,
+        spare_part_units: item.spare_part_units || '',
         description: '',
         image_file_id: '',
         active: true
@@ -353,7 +359,7 @@ function forgotPassword(email) {
 function getItems(token) {
   try {
     if (!validateSession(token)) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-    var items = getSheetData('Items').filter(function(i){ return i.active !== false; });
+    var items = getSheetData('Items').filter(function(i){ return i.active !== false; }).map(function(i){ return normalizeItemRecord(i); });
     items.sort(function(a,b){ return (a.item_code||'').localeCompare(b.item_code||''); });
     return { success: true, data: items };
   } catch(err) {
@@ -367,7 +373,7 @@ function getItemById(token, itemId) {
     if (!validateSession(token)) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
     var items = getSheetData('Items');
     for (var i = 0; i < items.length; i++) {
-      if (items[i].id === itemId) return { success: true, data: items[i] };
+      if (items[i].id === itemId) return { success: true, data: normalizeItemRecord(items[i]) };
     }
     return { success: false, message: 'ไม่พบรายการวัสดุ' };
   } catch(err) { return { success: false, message: err.message }; }
@@ -386,8 +392,14 @@ function addItem(token, itemData) {
       size: itemData.size || '',
       unit: itemData.unit,
       category: itemData.category || 'อื่นๆ',
+      item_type: itemData.item_type || 'consumable',
+      part_no: itemData.part_no || '',
+      machine_name: itemData.machine_name || '',
+      condition_status: itemData.condition_status || '',
+      serial_tracking: !!itemData.serial_tracking,
       current_stock: parseInt(itemData.current_stock) || 0,
       min_stock: parseInt(itemData.min_stock) || 5,
+      spare_part_units: itemData.spare_part_units || '',
       description: itemData.description || '',
       image_file_id: itemData.image_file_id || '',
       active: true
@@ -398,6 +410,17 @@ function addItem(token, itemData) {
     logError('addItem', err);
     return { success: false, message: err.message };
   }
+}
+
+function normalizeItemRecord(item) {
+  if (!item) return item;
+  if (!item.item_type) item.item_type = 'consumable';
+  if (typeof item.serial_tracking === 'undefined') item.serial_tracking = false;
+  if (!item.condition_status) item.condition_status = '';
+  if (typeof item.spare_part_units === 'undefined') item.spare_part_units = '';
+  if (!item.part_no) item.part_no = '';
+  if (!item.machine_name) item.machine_name = '';
+  return item;
 }
 
 function updateItem(token, itemId, itemData) {
@@ -411,7 +434,13 @@ function updateItem(token, itemId, itemData) {
       size: itemData.size,
       unit: itemData.unit,
       category: itemData.category,
+      item_type: itemData.item_type || 'consumable',
+      part_no: itemData.part_no || '',
+      machine_name: itemData.machine_name || '',
+      condition_status: itemData.condition_status || '',
+      serial_tracking: !!itemData.serial_tracking,
       min_stock: parseInt(itemData.min_stock) || 0,
+      spare_part_units: itemData.spare_part_units || '',
       description: itemData.description || '',
       image_file_id: itemData.image_file_id || ''
     };
@@ -1222,4 +1251,106 @@ function logError(fnName, err) {
     sheet.appendRow([JSON.stringify(data)]);
     console.error('[' + fnName + ']', err);
   } catch(e){}
+}
+
+// ===== MULTI-ITEM WITHDRAW OVERRIDE =====
+function addWithdrawal(token, wdData) {
+  try {
+    var session = validateSession(token);
+    if (!session) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+
+    var requestedItems = [];
+    if (wdData && Array.isArray(wdData.items) && wdData.items.length > 0) {
+      requestedItems = wdData.items;
+    } else if (wdData && wdData.item_id) {
+      requestedItems = [{ item_id: wdData.item_id, quantity: wdData.quantity }];
+    }
+
+    if (!requestedItems.length) {
+      return { success: false, message: 'กรุณาเลือกรายการวัสดุอย่างน้อย 1 รายการ' };
+    }
+
+    var items = getSheetData('Items');
+    var merged = {};
+
+    requestedItems.forEach(function(req) {
+      var itemId = req.item_id || '';
+      var qty = parseInt(req.quantity, 10) || 0;
+      if (!itemId || qty <= 0) return;
+      if (!merged[itemId]) merged[itemId] = { quantity: 0 };
+      merged[itemId].quantity += qty;
+    });
+
+    var selected = [];
+    Object.keys(merged).forEach(function(itemId) {
+      var item = null;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].id === itemId) { item = items[i]; break; }
+      }
+      if (!item) throw new Error('ไม่พบรายการวัสดุบางรายการ');
+      var qty = merged[itemId].quantity;
+      if (!qty || qty <= 0) throw new Error('กรุณาระบุจำนวนให้ถูกต้อง');
+      if (qty > item.current_stock) {
+        throw new Error('จำนวนที่ขอเกินสต็อกคงเหลือสำหรับ "' + item.name + '"');
+      }
+      selected.push({ item: item, quantity: qty });
+    });
+
+    if (!selected.length) {
+      return { success: false, message: 'กรุณาเลือกรายการวัสดุอย่างน้อย 1 รายการ' };
+    }
+
+    var wdNo = generateRunningNumber('WD', 'Withdrawals');
+    var now = new Date().toISOString();
+    var groupId = Utilities.getUuid();
+
+    selected.forEach(function(entry) {
+      var item = entry.item;
+      var qty = entry.quantity;
+      var wd = {
+        id: Utilities.getUuid(),
+        withdraw_no: wdNo,
+        request_group: groupId,
+        item_id: item.id,
+        item_name: item.name,
+        item_code: item.item_code,
+        quantity: qty,
+        quantity_requested: qty,
+        quantity_approved: 0,
+        unit: item.unit,
+        purpose: wdData.purpose || '',
+        note: wdData.note || '',
+        status: 'pending',
+        requested_by: session.user_id,
+        requested_by_name: session.name,
+        requested_at: now,
+        approved_by: '',
+        approved_by_name: '',
+        approved_at: '',
+        reject_reason: '',
+        via_qr: wdData.via_qr || false
+      };
+      saveToSheet('Withdrawals', wd);
+    });
+
+    var summary = selected.map(function(entry) {
+      return entry.item.name + ' x' + entry.quantity + ' ' + entry.item.unit;
+    }).join('\n');
+
+    sendTelegram('<b>คำขอเบิกใหม่</b> #' + wdNo
+      + '\nรายการ: ' + selected.length + ' รายการ'
+      + '\n' + summary
+      + '\nผู้ขอ: ' + session.name + ' (' + CONFIG.USER_ROLES[session.role].name + ')'
+      + '\nวัตถุประสงค์: ' + (wdData.purpose || '-'));
+
+    return {
+      success: true,
+      message: 'ยื่นคำขอเบิกเรียบร้อย รอการอนุมัติ',
+      withdraw_no: wdNo,
+      items_count: selected.length
+    };
+  } catch(err) {
+    logError('addWithdrawal', err);
+    return { success: false, message: err.message };
+  }
 }

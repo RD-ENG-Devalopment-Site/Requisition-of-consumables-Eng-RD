@@ -1,43 +1,20 @@
-const CACHE_NAME = 'sup-v1';
-const STATIC_ASSETS = [
-  '/testapp/',
-  '/testapp/index.html',
-  '/testapp/styles.css',
-  '/testapp/api.js',
-  '/testapp/mock-api.js',
-  '/testapp/app.js'
-];
+const CACHE_NAME = 'sup-v2';
 
-self.addEventListener('install', function(e) {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(function(cache) {
-      return cache.addAll(STATIC_ASSETS);
-    }).catch(function(){})
-  );
+self.addEventListener('install', function() {
   self.skipWaiting();
 });
 
-self.addEventListener('activate', function(e) {
-  e.waitUntil(
+self.addEventListener('activate', function(event) {
+  event.waitUntil(
     caches.keys().then(function(names) {
-      return Promise.all(names.filter(function(n){ return n !== CACHE_NAME; }).map(function(n){ return caches.delete(n); }));
+      return Promise.all(names.map(function(name) { return caches.delete(name); }));
+    }).then(function() {
+      return self.clients.claim();
     })
   );
-  self.clients.claim();
 });
 
-self.addEventListener('fetch', function(e) {
-  if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request).then(function(cached) {
-      var fetchPromise = fetch(e.request).then(function(networkRes) {
-        if (networkRes && networkRes.status === 200) {
-          var clone = networkRes.clone();
-          caches.open(CACHE_NAME).then(function(cache){ cache.put(e.request, clone); }).catch(function(){});
-        }
-        return networkRes;
-      }).catch(function(){});
-      return cached || fetchPromise;
-    })
-  );
+self.addEventListener('fetch', function(event) {
+  if (event.request.method !== 'GET') return;
+  event.respondWith(fetch(event.request));
 });

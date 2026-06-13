@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
+﻿@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
 
 :root {
   --navy-50: #eef1ff;
@@ -207,3 +207,4 @@
   .card { box-shadow: none !important; border: none !important; }
   .ar-header-logo { max-height: 48px; }
 }
+

@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // API Client — Google Apps Script Backend
 // ============================================================
 
@@ -55,3 +55,4 @@ function getFileDataUrl(fileId) {
   if (String(fileId).indexOf('http') === 0 || String(fileId).indexOf('data:') === 0) return fileId;
   return 'https://lh5.googleusercontent.com/d/' + fileId;
 }
+
