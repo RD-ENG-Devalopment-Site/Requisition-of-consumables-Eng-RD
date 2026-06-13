@@ -1049,6 +1049,10 @@ function fieldHTML(label, id, type, value, extra) {
 function toggleItemFormTypeFields() {
   var typeEl = document.getElementById('itemType');
   var type = typeEl ? typeEl.value : 'consumable';
+  var catEl = document.getElementById('itemCategory');
+  if (catEl && type === 'spare_part') {
+    catEl.value = 'อะไหล่เครื่องจักร';
+  }
   document.querySelectorAll('.item-spare-field').forEach(function(el) {
     el.style.display = type === 'spare_part' ? '' : 'none';
   });
