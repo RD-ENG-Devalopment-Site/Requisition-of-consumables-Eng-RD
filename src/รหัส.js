@@ -860,6 +860,13 @@ function getDashboardStats(token) {
     var today = new Date().toISOString().split('T')[0];
     var cfg   = getConfig();
     var threshold = cfg.low_stock_threshold || CONFIG.LOW_STOCK_DEFAULT;
+    var itemTypeById = {};
+    var itemTypeByName = {};
+    items.forEach(function(item) {
+      var type = inferItemTypeFromCategory(item.category || item.item_type || '');
+      itemTypeById[item.id] = type;
+      itemTypeByName[String(item.name || '').trim().toLowerCase()] = type;
+    });
 
     var totalItems = items.length;
     var lowStockItems = items.filter(function(i){ return (i.current_stock||0) <= (i.min_stock || threshold); });
@@ -867,17 +874,32 @@ function getDashboardStats(token) {
     var todayTxs  = txs.filter(function(t){ return t.date === today; });
 
     var monthlyData = {};
+    var monthlyByType = {
+      consumable: {},
+      spare_part: {}
+    };
+    var categoryStockByType = {
+      consumable: {},
+      spare_part: {}
+    };
     var now = new Date();
     for (var m = 5; m >= 0; m--) {
       var d = new Date(now.getFullYear(), now.getMonth() - m, 1);
       var key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2,'0');
       monthlyData[key] = { receive: 0, withdraw: 0, label: (d.getMonth() + 1) + '/' + (d.getFullYear() + 543) };
+      monthlyByType.consumable[key] = { receive: 0, withdraw: 0, label: (d.getMonth() + 1) + '/' + (d.getFullYear() + 543) };
+      monthlyByType.spare_part[key] = { receive: 0, withdraw: 0, label: (d.getMonth() + 1) + '/' + (d.getFullYear() + 543) };
     }
     txs.forEach(function(t) {
       var key = (t.date || '').substring(0, 7);
       if (monthlyData[key]) {
         if (t.type === 'receive')  monthlyData[key].receive  += t.quantity || 0;
         if (t.type === 'withdraw') monthlyData[key].withdraw += t.quantity || 0;
+      }
+      var matchedType = itemTypeById[t.item_id] || itemTypeByName[String(t.item_name || '').trim().toLowerCase()] || 'consumable';
+      if (monthlyByType[matchedType] && monthlyByType[matchedType][key]) {
+        if (t.type === 'receive')  monthlyByType[matchedType][key].receive  += t.quantity || 0;
+        if (t.type === 'withdraw') monthlyByType[matchedType][key].withdraw += t.quantity || 0;
       }
     });
 
@@ -893,7 +915,11 @@ function getDashboardStats(token) {
     var categoryStock = {};
     items.forEach(function(i) {
       var cat = i.category || 'อื่นๆ';
-      categoryStock[cat] = (categoryStock[cat] || 0) + 1;
+      var type = inferItemTypeFromCategory(i.category || i.item_type || '');
+      var stockQty = i.current_stock || 0;
+      categoryStock[cat] = (categoryStock[cat] || 0) + stockQty;
+      if (!categoryStockByType[type]) categoryStockByType[type] = {};
+      categoryStockByType[type][cat] = (categoryStockByType[type][cat] || 0) + stockQty;
     });
 
     var recentTxs = txs.slice().sort(function(a,b){ return b.created_at > a.created_at ? 1 : -1; }).slice(0, 10);
@@ -909,6 +935,16 @@ function getDashboardStats(token) {
         today_tx: todayTxs.length
       },
       monthly: Object.values(monthlyData),
+      type_stats: {
+        consumable: {
+          monthly: Object.values(monthlyByType.consumable),
+          category_stock: categoryStockByType.consumable || {}
+        },
+        spare_part: {
+          monthly: Object.values(monthlyByType.spare_part),
+          category_stock: categoryStockByType.spare_part || {}
+        }
+      },
       top_items: topItems,
       category_stock: categoryStock,
       low_stock_items: lowStockItems.slice(0, 5),
@@ -1037,10 +1073,16 @@ function saveConfig(token, configData) {
     var session = validateSession(token);
     if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์' };
     var configs = getSheetData('Config');
+    var existing = configs.length > 0 ? configs[0] : {};
+    var merged = {};
+    Object.keys(existing || {}).forEach(function(key) { merged[key] = existing[key]; });
+    Object.keys(configData || {}).forEach(function(key) {
+      if (typeof configData[key] !== 'undefined') merged[key] = configData[key];
+    });
     if (configs.length > 0) {
-      updateInSheet('Config', configs[0].id, configData);
+      updateInSheet('Config', configs[0].id, merged);
     } else {
-      saveToSheet('Config', configData);
+      saveToSheet('Config', merged);
     }
     return { success: true, message: 'บันทึกการตั้งค่าเรียบร้อย' };
   } catch(err) { return { success: false, message: err.message }; }

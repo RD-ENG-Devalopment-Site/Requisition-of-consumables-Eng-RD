@@ -285,7 +285,7 @@ function loadPage(page) {
     dashboard: 'ภาพรายงานระบบ', stock: 'สต็อกคงเหลือ', items: 'รายการวัสดุ',
     receive: 'รับวัสดุเข้าคลัง', stocktake: 'นับสต็อก', printqr: 'พิมพ์ QR สติ๊กเกอร์', withdraw: 'เบิกวัสดุ', approve: 'อนุมัติการเบิก',
     transactions: 'ประวัติเคลื่อนไหว', reports: 'รายงาน',
-    users: 'จัดการผู้ใช้งาน', profile: 'โปรไฟล์',
+    users: 'จัดการผู้ใช้งาน', settings: 'ตั้งค่าระบบ', profile: 'โปรไฟล์',
   };
   
   var pageTitleEl = document.getElementById('pageTitle');
@@ -314,6 +314,7 @@ function loadPage(page) {
   else if (page === 'transactions') renderTransactions();
   else if (page === 'reports')   renderReports();
   else if (page === 'users')     renderUsers();
+  else if (page === 'settings')   renderSettings();
   else if (page === 'profile')   renderProfile();
 }
 
@@ -347,7 +348,7 @@ function expandActiveMenuSection(page) {
     dashboard: 'main', stock: 'main',
     items: 'inventory', receive: 'inventory', stocktake: 'inventory', printqr: 'inventory',
     withdraw: 'withdraw', approve: 'withdraw', transactions: 'withdraw',
-    reports: 'report', users: 'admin', profile: 'main'
+    reports: 'report', users: 'admin', settings: 'admin', profile: 'main'
   };
   var section = map[page];
   if (!section) return;
@@ -497,12 +498,25 @@ function renderDashboard() {
     });
     html += '</div></div></div>';
 
-    // ส่วนของกราฟสรุปสถิติ
-    html += '<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">';
-    html += '<div class="card lg:col-span-2"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm flex items-center gap-2"><i class="fi fi-rr-chart-histogram text-navy-600"></i> สถิติรับ-เบิก 6 เดือนล่าสุด</h3></div>';
-    html += '<div class="card-body"><div style="position:relative;height:220px"><canvas id="chartMonthly"></canvas></div></div></div>';
-    html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm flex items-center gap-2"><i class="fi fi-rr-chart-pie text-navy-600"></i> สัดส่วนวัสดุ</h3></div>';
-    html += '<div class="card-body"><div style="position:relative;height:220px"><canvas id="chartCategory"></canvas></div></div></div>';
+    // ส่วนของกราฟสรุปสถิติแยกตามประเภทวัสดุ
+    var dashboardSections = [
+      { key: 'consumable', label: 'วัสดุสิ้นเปลือง', icon: 'fi-rr-box-open-full', monthlyColor: '#3b82f6', withdrawColor: '#8b5cf6' },
+      { key: 'spare_part', label: 'อะไหล่เครื่องจักร', icon: 'fi-rr-settings', monthlyColor: '#10b981', withdrawColor: '#f59e0b' }
+    ];
+    html += '<div class="space-y-6">';
+    dashboardSections.forEach(function(section) {
+      html += '<div class="space-y-3">';
+      html += '<div class="flex items-center justify-between">';
+      html += '<div><p class="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5"><i class="fi ' + section.icon + ' text-navy-600"></i> ' + section.label + '</p>';
+      html += '<p class="text-xs text-gray-400 mt-1">แยกกราฟรายเดือนและสัดส่วนตามประเภท</p></div>';
+      html += '</div>';
+      html += '<div class="grid grid-cols-1 xl:grid-cols-3 gap-4">';
+      html += '<div class="card xl:col-span-2"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm flex items-center gap-2"><i class="fi fi-rr-chart-histogram text-navy-600"></i> สถิติรับ-เบิก 6 เดือนล่าสุด</h3></div>';
+      html += '<div class="card-body"><div style="position:relative;height:220px"><canvas id="chartMonthly_' + section.key + '"></canvas></div></div></div>';
+      html += '<div class="card"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm flex items-center gap-2"><i class="fi fi-rr-chart-pie text-navy-600"></i> สัดส่วนวัสดุ</h3></div>';
+      html += '<div class="card-body"><div style="position:relative;height:220px"><canvas id="chartCategory_' + section.key + '"></canvas></div></div></div>';
+      html += '</div></div>';
+    });
     html += '</div>';
 
     // ส่วนประวัติล่าสุดและการอนุมัติ
@@ -565,34 +579,44 @@ function renderDashboard() {
 
     // Render ชาร์ตสถิติ
     setTimeout(function() {
-      if (_charts.monthly) _charts.monthly.destroy();
-      var ctxM = document.getElementById('chartMonthly');
-      if (ctxM) {
-        _charts.monthly = new Chart(ctxM, {
-          type: 'bar',
-          data: {
-            labels: d.monthly.map(function(m) { return m.label; }),
-            datasets: [
-              { label: 'รับเข้า', data: d.monthly.map(function(m) { return m.receive; }), backgroundColor: '#3b82f6', borderRadius: 6, barPercentage: 0.6 },
-              { label: 'เบิกออก', data: d.monthly.map(function(m) { return m.withdraw; }), backgroundColor: '#8b5cf6', borderRadius: 6, barPercentage: 0.6 }
-            ]
-          },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { font: { family: 'Sarabun', size: 11 }, boxWidth: 12 } } }, scales: { y: { ticks: { font: { family: 'Sarabun', size: 11 } }, grid: { color: '#f3f4f6' } }, x: { ticks: { font: { family: 'Sarabun', size: 11 } }, grid: { display: false } } } }
-        });
-      }
-      
-      if (_charts.category) _charts.category.destroy();
-      var ctxC = document.getElementById('chartCategory');
-      if (ctxC && d.category_stock) {
-        var cats = Object.keys(d.category_stock);
-        var vals = cats.map(function(k) { return d.category_stock[k]; });
-        var colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899'];
-        _charts.category = new Chart(ctxC, {
-          type: 'doughnut',
-          data: { labels: cats, datasets: [ { data: vals, backgroundColor: colors.slice(0, cats.length), borderWidth: 0, hoverOffset: 6 } ] },
-          options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Sarabun', size: 10 }, boxWidth: 10, padding: 8 } } } }
-        });
-      }
+      dashboardSections.forEach(function(section) {
+        var sectionData = (d.type_stats && d.type_stats[section.key]) || { monthly: [], category_stock: {} };
+        var monthlyLabels = (sectionData.monthly || []).map(function(m) { return m.label; });
+        var monthlyReceive = (sectionData.monthly || []).map(function(m) { return m.receive; });
+        var monthlyWithdraw = (sectionData.monthly || []).map(function(m) { return m.withdraw; });
+        var catLabels = Object.keys(sectionData.category_stock || {});
+        var catValues = catLabels.map(function(k) { return sectionData.category_stock[k]; });
+        var colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#14b8a6'];
+
+        var monthlyKey = 'monthly_' + section.key;
+        var categoryKey = 'category_' + section.key;
+        if (_charts[monthlyKey]) _charts[monthlyKey].destroy();
+        if (_charts[categoryKey]) _charts[categoryKey].destroy();
+
+        var ctxM = document.getElementById('chartMonthly_' + section.key);
+        if (ctxM) {
+          _charts[monthlyKey] = new Chart(ctxM, {
+            type: 'bar',
+            data: {
+              labels: monthlyLabels,
+              datasets: [
+                { label: 'รับเข้า', data: monthlyReceive, backgroundColor: section.monthlyColor, borderRadius: 6, barPercentage: 0.6 },
+                { label: 'เบิกออก', data: monthlyWithdraw, backgroundColor: section.withdrawColor, borderRadius: 6, barPercentage: 0.6 }
+              ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { font: { family: 'Sarabun', size: 11 }, boxWidth: 12 } } }, scales: { y: { ticks: { font: { family: 'Sarabun', size: 11 } }, grid: { color: '#f3f4f6' } }, x: { ticks: { font: { family: 'Sarabun', size: 11 } }, grid: { display: false } } } }
+          });
+        }
+
+        var ctxC = document.getElementById('chartCategory_' + section.key);
+        if (ctxC) {
+          _charts[categoryKey] = new Chart(ctxC, {
+            type: 'doughnut',
+            data: { labels: catLabels, datasets: [ { data: catValues, backgroundColor: colors.slice(0, catLabels.length), borderWidth: 0, hoverOffset: 6 } ] },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Sarabun', size: 10 }, boxWidth: 10, padding: 8 } } } }
+          });
+        }
+      });
     }, 100);
 
   }).catch(function(err) { hideLoading(); showError('โหลด Dashboard ไม่สำเร็จ'); });
@@ -610,7 +634,7 @@ function quickApprove(wdId, qty) {
 }
 
 function quickReject(wdId) {
-  Swal.fire({
+  Swal.fire({
     title: 'เหตุผลที่ปฏิเสธ', input: 'text', inputPlaceholder: 'ระบุเหตุผล...',
     showCancelButton: true, confirmButtonText: 'ปฏิเสธ', cancelButtonText: 'ยกเลิก',
     inputValidator: function(v) { if (!v) return 'กรุณาระบุเหตุผล'; },
@@ -623,7 +647,70 @@ function quickReject(wdId) {
       if (res.success) { showSuccess('ปฏิเสธคำขอแล้ว'); renderDashboard(); }
       else showError(res.message);
     }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
-  });
+  });
+}
+
+// ===== SETTINGS =====
+var _settingsConfig = {};
+
+function renderSettings() {
+  if (AUTH.user.role !== 'admin') { loadPage('dashboard'); return; }
+  showLoading('โหลดการตั้งค่าระบบ...');
+  callAPI('getConfig', AUTH.token).then(function(res) {
+    hideLoading();
+    if (!res.success) { showError(res.message); return; }
+    _settingsConfig = res.data || {};
+    buildSettingsPage();
+  }).catch(function() { hideLoading(); showError('โหลดการตั้งค่าไม่สำเร็จ'); });
+}
+
+function buildSettingsPage() {
+  var cfg = _settingsConfig || {};
+  var html = '<div class="fade-in space-y-4 max-w-3xl">';
+  html += '<div class="flex items-center justify-between">';
+  html += '<div><h3 class="font-semibold text-gray-800 text-lg flex items-center gap-2"><i class="fi fi-rr-settings text-navy-600"></i> ตั้งค่าระบบ</h3>';
+  html += '<p class="text-xs text-gray-500 mt-1">ปรับชื่อระบบและค่าตั้งต้นที่ใช้ร่วมกันทุกหน้า</p></div>';
+  html += '</div>';
+  html += '<div class="card p-5 space-y-4">';
+  html += '<div><label class="form-label">ชื่อระบบ</label><input id="settingsAppName" class="form-input" value="' + escHtml(cfg.app_name || '') + '" placeholder="Requisition of consumables"></div>';
+  html += '<div><label class="form-label">ชื่อหน่วยงาน</label><input id="settingsOrgName" class="form-input" value="' + escHtml(cfg.organization_name || '') + '" placeholder="RD"></div>';
+  html += '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">';
+  html += '<div><label class="form-label">ค่าเตือนสต็อกต่ำ</label><input id="settingsLowStock" type="number" min="0" class="form-input" value="' + escHtml(cfg.low_stock_threshold != null ? cfg.low_stock_threshold : '') + '" placeholder="5"></div>';
+  html += '<div><label class="form-label">เวอร์ชันระบบ</label><input class="form-input bg-gray-50" value="' + escHtml(cfg.app_version || '1.0') + '" readonly></div>';
+  html += '</div>';
+  html += '<div class="rounded-xl bg-blue-50 border border-blue-100 p-4 text-sm text-blue-800">';
+  html += '<i class="fi fi-rr-info mr-1"></i> ถ้าบันทึกแล้วชื่อระบบจะอัปเดตบนแถบด้านบนทันที และค่าตั้งต้นจะถูกใช้ในหน้าที่เกี่ยวข้อง';
+  html += '</div>';
+  html += '</div>';
+  html += '<div class="flex justify-end gap-2">';
+  html += '<button onclick="loadPage(\'dashboard\')" class="btn-secondary">ยกเลิก</button>';
+  html += '<button onclick="saveSettings()" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึกการตั้งค่า</button>';
+  html += '</div></div>';
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
+}
+
+function saveSettings() {
+  var appNameEl = document.getElementById('settingsAppName');
+  var orgNameEl = document.getElementById('settingsOrgName');
+  var lowStockEl = document.getElementById('settingsLowStock');
+  var payload = {
+    app_name: appNameEl ? appNameEl.value.trim() : '',
+    organization_name: orgNameEl ? orgNameEl.value.trim() : '',
+    low_stock_threshold: lowStockEl && lowStockEl.value !== '' ? parseInt(lowStockEl.value, 10) : ''
+  };
+  if (!payload.app_name) { showError('กรุณาระบุชื่อระบบ'); return; }
+  showLoading('กำลังบันทึกการตั้งค่า...');
+  callAPI('saveConfig', AUTH.token, payload).then(function(res) {
+    hideLoading();
+    if (!res.success) { showError(res.message); return; }
+    _settingsConfig = Object.assign({}, _settingsConfig, payload);
+    var loginApp = document.getElementById('loginAppName');
+    var sideApp = document.getElementById('sidebarAppName');
+    if (loginApp) loginApp.textContent = payload.app_name;
+    if (sideApp) sideApp.textContent = payload.app_name;
+    showSuccess(res.message || 'บันทึกการตั้งค่าเรียบร้อย');
+  }).catch(function() { hideLoading(); showError('บันทึกการตั้งค่าไม่สำเร็จ'); });
 }
 
 // ===== ITEMS =====

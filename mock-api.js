@@ -131,9 +131,20 @@
       var lowItems = items.filter(function(i){ return i.active !== false && i.current_stock <= i.min_stock; });
       var todayTx = (receives.filter(function(r){ return r.date === today; }).length) + (withdrawals.filter(function(w){ return w.date === today && w.status==='approved'; }).length);
       var pending = withdrawals.filter(function(w){ return w.status === 'pending'; }).length;
+      var typeById = {};
+      var typeByName = {};
+      items.forEach(function(i) {
+        var type = String(i.category || '').trim().indexOf('หมวด') === 0 ? 'consumable' : 'spare_part';
+        typeById[i.id] = type;
+        typeByName[String(i.name || '').trim().toLowerCase()] = type;
+      });
 
       // Monthly stats (last 6 months)
       var labels = [], received = [], withdrawn = [];
+      var typeStats = {
+        consumable: { labels: [], received: [], withdrawn: [], category: {} },
+        spare_part: { labels: [], received: [], withdrawn: [], category: {} }
+      };
       for (var i=5; i>=0; i--) {
         var d = new Date(); d.setMonth(d.getMonth()-i);
         var ym = d.toISOString().slice(0,7);
@@ -141,11 +152,25 @@
         labels.push(label);
         received.push(receives.filter(function(r){ return r.date && r.date.startsWith(ym); }).reduce(function(s,r){ return s+r.quantity; },0));
         withdrawn.push(withdrawals.filter(function(w){ return w.date && w.date.startsWith(ym) && w.status==='approved'; }).reduce(function(s,w){ return s+w.quantity; },0));
+        typeStats.consumable.labels.push(label);
+        typeStats.consumable.received.push(receives.filter(function(r){ return r.date && r.date.startsWith(ym) && (typeById[r.item_id] || typeByName[String(r.item_name || '').trim().toLowerCase()] || 'consumable') === 'consumable'; }).reduce(function(s,r){ return s+r.quantity; },0));
+        typeStats.consumable.withdrawn.push(withdrawals.filter(function(w){ return w.date && w.date.startsWith(ym) && w.status==='approved' && (typeById[w.item_id] || typeByName[String(w.item_name || '').trim().toLowerCase()] || 'consumable') === 'consumable'; }).reduce(function(s,w){ return s+w.quantity; },0));
+        typeStats.spare_part.labels.push(label);
+        typeStats.spare_part.received.push(receives.filter(function(r){ return r.date && r.date.startsWith(ym) && (typeById[r.item_id] || typeByName[String(r.item_name || '').trim().toLowerCase()] || 'consumable') === 'spare_part'; }).reduce(function(s,r){ return s+r.quantity; },0));
+        typeStats.spare_part.withdrawn.push(withdrawals.filter(function(w){ return w.date && w.date.startsWith(ym) && w.status==='approved' && (typeById[w.item_id] || typeByName[String(w.item_name || '').trim().toLowerCase()] || 'consumable') === 'spare_part'; }).reduce(function(s,w){ return s+w.quantity; },0));
       }
 
       // Category stats for items
       var catMap = {};
-      items.forEach(function(i){ if(i.active!==false){ catMap[i.category]=(catMap[i.category]||0)+1; } });
+      var catByType = { consumable: {}, spare_part: {} };
+      items.forEach(function(i){
+        if(i.active!==false){
+          var type = String(i.category || '').trim().indexOf('หมวด') === 0 ? 'consumable' : 'spare_part';
+          var qty = i.current_stock || 0;
+          catMap[i.category] = (catMap[i.category]||0)+qty;
+          catByType[type][i.category] = (catByType[type][i.category]||0)+qty;
+        }
+      });
 
       return {
         success:true,
@@ -155,7 +180,17 @@
         category_stats: { labels:Object.keys(catMap), data:Object.values(catMap) },
         wd_trend: { labels:labels, data:withdrawn },
         wd_by_category: { labels:Object.keys(catMap), data:Object.values(catMap).map(function(){ return 0; }) },
-        monthly: labels.map(function(l, idx){ return { label:l, receive:received[idx], withdraw:withdrawn[idx] }; })
+        monthly: labels.map(function(l, idx){ return { label:l, receive:received[idx], withdraw:withdrawn[idx] }; }),
+        type_stats: {
+          consumable: {
+            monthly: typeStats.consumable.labels.map(function(l, idx){ return { label:l, receive:typeStats.consumable.received[idx], withdraw:typeStats.consumable.withdrawn[idx] }; }),
+            category_stock: catByType.consumable
+          },
+          spare_part: {
+            monthly: typeStats.spare_part.labels.map(function(l, idx){ return { label:l, receive:typeStats.spare_part.received[idx], withdraw:typeStats.spare_part.withdrawn[idx] }; }),
+            category_stock: catByType.spare_part
+          }
+        }
       };
     },
 
@@ -309,7 +344,11 @@
     // --- Config ---
     getConfig: function(token) { return { success:true, data: _get('config') || {} }; },
     saveConfig: function(token, data) {
-      _set('config', data);
+      var current = _get('config') || {};
+      var merged = {};
+      Object.keys(current).forEach(function(k){ merged[k] = current[k]; });
+      Object.keys(data || {}).forEach(function(k){ if (typeof data[k] !== 'undefined') merged[k] = data[k]; });
+      _set('config', merged);
       return { success:true, message:'บันทึกการตั้งค่าสำเร็จ' };
     },
     testTelegram: function(token) {
