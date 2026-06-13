@@ -61,6 +61,7 @@ function doGet(e) {
       var fn = params.fn;
       var args = [];
       try { args = JSON.parse(params.args || '[]'); } catch(err) { args = []; }
+      var callbackName = params.callback || '';
       var result;
       switch (fn) {
         case 'login':               result = login(args[0], args[1], args[2]); break;
@@ -96,6 +97,7 @@ function doGet(e) {
         default:
           result = { success: false, message: 'Unknown function: ' + fn };
       }
+      if (callbackName) return jsonpResponse(result, callbackName);
       return jsonResponse(result);
     }
 
@@ -139,6 +141,7 @@ function doPost(e) {
     if (!fn && e.parameter.fn) {
       fn = e.parameter.fn;
     }
+    var bridgeId = e.parameter.bridgeId || '';
 
     var result;
     switch (fn) {
@@ -153,6 +156,7 @@ function doPost(e) {
       default: 
         result = { success: false, message: 'Function ' + fn + ' not supported via POST' };
     }
+    if (bridgeId) return postMessageResponse(result, bridgeId);
     return jsonResponse(result);
   } catch(err) {
     logError('doPost', err);
@@ -164,6 +168,25 @@ function jsonResponse(data) {
   var output = ContentService.createTextOutput(JSON.stringify(data));
   output.setMimeType(ContentService.MimeType.JSON);
   return output;
+}
+
+function jsonpResponse(data, callbackName) {
+  var safeJson = JSON.stringify(data).replace(/</g, '\\u003c');
+  var output = ContentService.createTextOutput(callbackName + '(' + safeJson + ');');
+  output.setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return output;
+}
+
+function postMessageResponse(data, bridgeId) {
+  var safeJson = JSON.stringify(data).replace(/</g, '\\u003c');
+  var safeBridgeId = JSON.stringify(bridgeId || '');
+  var html = '<!doctype html><html><body><script>' +
+    '(function(){' +
+    'var payload=' + safeJson + ';' +
+    'window.top.postMessage({bridgeId:' + safeBridgeId + ', payload:payload}, "*");' +
+    '})();' +
+    '</script></body></html>';
+  return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 // ============================================================

@@ -13,18 +13,24 @@ var _QR_ACTION = '';
 var _QR_ITEM_ID = '';
 
 // ===== AUTH =====
+var _hasBrowserWindow = typeof window !== 'undefined';
+var _browserLocalStorage = _hasBrowserWindow && typeof localStorage !== 'undefined' ? localStorage : null;
 var AUTH = {
-  token: localStorage.getItem('sup_token') || '',
-  user: JSON.parse(localStorage.getItem('sup_user') || 'null'),
+  token: _browserLocalStorage ? (_browserLocalStorage.getItem('sup_token') || '') : '',
+  user: _browserLocalStorage ? JSON.parse(_browserLocalStorage.getItem('sup_user') || 'null') : null,
   set: function(token, user) {
     AUTH.token = token; AUTH.user = user;
-    localStorage.setItem('sup_token', token);
-    localStorage.setItem('sup_user', JSON.stringify(user));
+    if (_browserLocalStorage) {
+      _browserLocalStorage.setItem('sup_token', token);
+      _browserLocalStorage.setItem('sup_user', JSON.stringify(user));
+    }
   },
   clear: function() {
     AUTH.token = ''; AUTH.user = null;
-    localStorage.removeItem('sup_token');
-    localStorage.removeItem('sup_user');
+    if (_browserLocalStorage) {
+      _browserLocalStorage.removeItem('sup_token');
+      _browserLocalStorage.removeItem('sup_user');
+    }
   },
   hasRole: function(roles) {
     if (!AUTH.user) return false;
@@ -396,13 +402,15 @@ function globalSearchGoTo(id, type) {
   if (resultsDiv) resultsDiv.classList.add('hidden');
   showItemDetailModal(id);
 }
-window.addEventListener('click', function(e) {
-  var gs = document.getElementById('globalSearch');
-  var gr = document.getElementById('globalSearchResults');
-  if (gs && gr && !gs.contains(e.target) && !gr.contains(e.target)) {
-    gr.classList.add('hidden');
-  }
-});
+if (_hasBrowserWindow) {
+  window.addEventListener('click', function(e) {
+    var gs = document.getElementById('globalSearch');
+    var gr = document.getElementById('globalSearchResults');
+    if (gs && gr && !gs.contains(e.target) && !gr.contains(e.target)) {
+      gr.classList.add('hidden');
+    }
+  });
+}
 
 // ===== DASHBOARD =====
 var _charts = {};
@@ -2792,6 +2800,7 @@ function doToggleUser(userId, name) {
 }
 
 // ===== ON LOAD =====
+if (_hasBrowserWindow) {
 window.onload = function() {
   var urlParams = new URLSearchParams(window.location.search);
   _QR_ACTION = urlParams.get('action') || '';
@@ -2817,6 +2826,7 @@ callAPI('getConfig').then(function(res) {
     }
   });
 }; // 🟢 บรรทัดนี้ปิด window.onload ตัวใหญ่สุด
+}
 
 // ===== WITHDRAW BATCH BUILDER (multi-item requisition) =====
 var _wdDraftItems = [];

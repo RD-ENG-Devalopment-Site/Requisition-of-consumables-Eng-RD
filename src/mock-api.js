@@ -4,10 +4,13 @@
 (function() {
 
   // ===== Helpers =====
+  var _mockRoot = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
+  var _mockStorage = typeof localStorage !== 'undefined' ? localStorage : null;
   function _get(key) {
-    try { return JSON.parse(localStorage.getItem('sup_mock_' + key) || 'null'); } catch(e) { return null; }
+    if (!_mockStorage) return null;
+    try { return JSON.parse(_mockStorage.getItem('sup_mock_' + key) || 'null'); } catch(e) { return null; }
   }
-  function _set(key, val) { localStorage.setItem('sup_mock_' + key, JSON.stringify(val)); }
+  function _set(key, val) { if (_mockStorage) _mockStorage.setItem('sup_mock_' + key, JSON.stringify(val)); }
   function _ensure(key, defaultVal) { if (_get(key) === null) _set(key, defaultVal); return _get(key); }
   var _idCounter = _get('id_counter') || 100;
   function _nextId() { _idCounter++; _set('id_counter', _idCounter); return 'id_' + _idCounter; }
@@ -96,7 +99,7 @@
   seed();
 
   // ===== Mock API =====
-  window._mockAPI = {
+  _mockRoot._mockAPI = {
 
     // --- Auth ---
     login: function(username, password, role) {
@@ -320,7 +323,7 @@
     _set('transactions', tx);
   }
 
-  window._mockAPI.addWithdrawal = function(token, data) {
+  _mockRoot._mockAPI.addWithdrawal = function(token, data) {
     var wd = _get('withdrawals') || [];
     var items = _get('items') || [];
     var authUser = _auth(token);

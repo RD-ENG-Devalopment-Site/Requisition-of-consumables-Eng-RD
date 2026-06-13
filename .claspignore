@@ -1,3 +1,5 @@
 src/**
 ping.txt
 test-write.txt
+bridge/**
+DEPLOYMENT.md
