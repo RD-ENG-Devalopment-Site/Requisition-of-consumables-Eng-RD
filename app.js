@@ -121,6 +121,10 @@ function getStockLabel(stock, min) {
   if (stock <= min) return 'ใกล้หมด';
   return 'ปกติ';
 }
+function isLowStockItem(item) {
+  if (!item) return false;
+  return item.active !== false && item.current_stock <= (item.min_stock || 5);
+}
 function imgUrl(fileId, size) {
   if (!fileId) return '';
   return getFileDataUrl(fileId) || '';
@@ -907,7 +911,7 @@ function buildItemsPage() {
 
   html += '<div class="flex gap-2 flex-wrap text-xs">';
   html += '<span class="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full font-medium"><i class="fi fi-rr-box-open-full mr-1"></i>ทั้งหมด: ' + _itemsData.length + '</span>';
-  var lowCount = _itemsData.filter(function(i) { return i.current_stock <= i.min_stock; }).length;
+  var lowCount = _itemsData.filter(isLowStockItem).length;
   if (lowCount > 0) html += '<span class="bg-amber-50 text-amber-700 px-3 py-1.5 rounded-full font-medium"><i class="fi fi-rr-triangle-warning mr-1"></i>ใกล้หมด: ' + lowCount + '</span>';
   html += '</div>';
 
@@ -984,8 +988,8 @@ function filterItems(data, f) {
     if (f.search && itemSearchHaystack(i).indexOf(f.search.toLowerCase()) === -1) return false;
     if (f.type !== 'all' && getResolvedItemType(i) !== f.type) return false;
     if (f.category !== 'all' && i.category !== f.category) return false;
-    if (f.stock === 'low' && i.current_stock > i.min_stock) return false;
-    if (f.stock === 'ok'  && i.current_stock <= i.min_stock) return false;
+    if (f.stock === 'low' && !isLowStockItem(i)) return false;
+    if (f.stock === 'ok'  && isLowStockItem(i)) return false;
     return true;
   });
 }
@@ -1537,7 +1541,7 @@ var _stockFilter = { search: '', category: '', type: 'all', machine: 'all' };
 function updateLowStockBadge(items) {
   var lowBadge = document.getElementById('lowStockBadge');
   if (!lowBadge) return;
-  var count = (items || []).filter(function(i) { return i.active !== false && i.current_stock <= i.min_stock; }).length;
+  var count = (items || []).filter(isLowStockItem).length;
   if (count > 0) { lowBadge.textContent = count; lowBadge.classList.remove('hidden'); }
   else { lowBadge.classList.add('hidden'); }
 }
@@ -1595,19 +1599,19 @@ function buildStockPage() {
 
 function buildStockContent(data) {
   if (_stockView === 'card') {
-    var html = '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">';
-    if (data.length === 0) html += '<p class="col-span-4 text-center text-gray-400 py-10">ไม่พบรายการ</p>';
-    data.forEach(function(item) {
+    var html = '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">';
+    if (data.length === 0) html += '<p class="col-span-4 text-center text-gray-400 py-10">ไม่พบรายการ</p>';
+    data.forEach(function(item) {
       var sClass = getStockClass(item.current_stock, item.min_stock);
       var sLabel = getStockLabel(item.current_stock, item.min_stock);
+      var lowBadge = isLowStockItem(item) ? '<span class="absolute -top-2 -right-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold shadow-sm ' + sClass + '"><i class="fi fi-rr-triangle-warning"></i>' + sLabel + '</span>' : '';
       var pct = item.min_stock > 0 ? Math.min(100, Math.round(item.current_stock / (item.min_stock * 3) * 100)) : 50;
       var barColor = item.current_stock <= 0 ? 'bg-red-500' : item.current_stock <= item.min_stock ? 'bg-amber-400' : 'bg-green-500';
       html += '<div class="card p-4 flex flex-col gap-3 hover:shadow-md transition-shadow">';
       html += '<div class="flex items-start justify-between">';
       var imgUrlSrc = imgUrl(item.image_file_id);
       var cardImg = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-10 h-10 object-cover rounded-xl border border-gray-200" loading="lazy">' : '<div class="w-10 h-10 bg-navy-100 rounded-xl flex items-center justify-center"><i class="fi fi-rr-box-open-full text-navy-700 text-lg"></i></div>';
-      html += '<div>' + cardImg + '</div>';
-      html += '<span class="px-2 py-0.5 rounded-full text-xs font-medium ' + sClass + '">' + sLabel + '</span></div>';
+      html += '<div class="relative">' + cardImg + lowBadge + '</div></div>';
       html += '<div><p class="font-semibold text-gray-800 text-sm leading-snug">' + escHtml(item.name) + '</p>';
       html += '<p class="text-xs text-gray-400 mt-0.5">' + escHtml(item.size || '') + ' • ' + escHtml(item.category || '') + '</p>';
       html += '<p class="text-xs text-gray-500 mt-0.5">' + escHtml(getItemTypeLabel(getResolvedItemType(item))) + ' • ' + escHtml(getMachineUsageText(item)) + '</p></div>';
@@ -2679,33 +2683,45 @@ function renderReports() {
   var contentEl = document.getElementById('mainContent');
   if (contentEl) contentEl.innerHTML = html;
 
-  Promise.all([
+  Promise.all([
     callAPI('getDashboardStats', AUTH.token),
     callAPI('getItems', AUTH.token)
   ]).then(function(results) {
     var stats = results[0];
     var items = results[1].data || [];
-    var lowItems = items.filter(function(i) { return i.current_stock <= (i.min_stock || 5); });
+    var lowItems = items.filter(isLowStockItem);
+    var lowConsumables = lowItems.filter(function(i) { return getResolvedItemType(i) === 'consumable'; });
+    var lowSpareParts = lowItems.filter(function(i) { return getResolvedItemType(i) === 'spare_part'; });
 
-    var lsHtml = '';
-    if (lowItems.length === 0) {
-      lsHtml = '<p class="text-center text-sm text-gray-400 py-4">ไม่มีรายการวัสดุที่ต้องเติม</p>';
-    } else {
-      lsHtml = '<div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
-      lsHtml += '<tr><th class="px-4 py-2 text-left">เลขไอเท็ม</th><th class="px-4 py-2 text-left">ชื่อวัสดุ</th><th class="px-4 py-2 text-center">คงเหลือ</th><th class="px-4 py-2 text-center">ขั้นต่ำ</th><th class="px-4 py-2 text-center">สถานะ</th></tr>';
-      lsHtml += '</thead><tbody class="divide-y divide-gray-100">';
-      lowItems.forEach(function(i) {
-        var sc = getStockClass(i.current_stock, i.min_stock);
-        lsHtml += '<tr><td class="px-4 py-2 font-mono text-xs text-navy-700">' + escHtml(i.item_code) + '</td>';
-        lsHtml += '<td class="px-4 py-2 font-medium text-gray-700">' + escHtml(i.name) + '</td>';
-        lsHtml += '<td class="px-4 py-2 text-center font-bold">' + i.current_stock + ' ' + escHtml(i.unit) + '</td>';
-        lsHtml += '<td class="px-4 py-2 text-center text-gray-400">' + i.min_stock + '</td>';
-        lsHtml += '<td class="px-4 py-2 text-center"><span class="px-2 py-0.5 rounded-full text-xs ' + sc + '">' + getStockLabel(i.current_stock, i.min_stock) + '</span></td></tr>';
-      });
-      lsHtml += '</tbody></table></div>';
-    }
-    var lsReport = document.getElementById('lowStockReport');
-    if (lsReport) lsReport.innerHTML = lsHtml;
+    function buildMiniLowList(title, list, tone) {
+      var html = '<div class="border ' + tone.border + ' rounded-2xl overflow-hidden">';
+      html += '<div class="px-4 py-3 ' + tone.headBg + ' flex items-center justify-between gap-3">';
+      html += '<div><p class="font-semibold ' + tone.headText + '">' + escHtml(title) + '</p><p class="text-xs ' + tone.subText + '">คงเหลือ <= ขั้นต่ำ จะถูกจัดเป็นใกล้หมด</p></div>';
+      html += '<span class="px-2.5 py-1 rounded-full text-xs font-semibold ' + tone.badge + '">' + list.length + ' รายการ</span></div>';
+      html += '<div class="overflow-x-auto"><table class="w-full text-sm"><thead class="' + tone.tableHead + ' text-xs">';
+      html += '<tr><th class="px-4 py-2 text-left">เลขไอเท็ม</th><th class="px-4 py-2 text-left">ชื่อวัสดุ</th><th class="px-4 py-2 text-center">คงเหลือ</th><th class="px-4 py-2 text-center">ขั้นต่ำ</th></tr>';
+      html += '</thead><tbody class="divide-y divide-gray-100">';
+      if (!list.length) html += '<tr><td colspan="4" class="text-center py-6 text-gray-400">ไม่มีรายการ</td></tr>';
+      list.forEach(function(i) {
+        html += '<tr><td class="px-4 py-2 font-mono text-xs text-navy-700">' + escHtml(i.item_code) + '</td>';
+        html += '<td class="px-4 py-2 font-medium text-gray-700">' + escHtml(i.name) + '</td>';
+        html += '<td class="px-4 py-2 text-center font-bold">' + i.current_stock + ' ' + escHtml(i.unit) + '</td>';
+        html += '<td class="px-4 py-2 text-center text-gray-400">' + i.min_stock + '</td></tr>';
+      });
+      html += '</tbody></table></div></div>';
+      return html;
+    }
+
+    var lsHtml = '<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">';
+    lsHtml += '<div class="card p-4 border border-red-200 bg-red-50"><div class="text-xs font-semibold text-red-600 uppercase tracking-wide">แจ้งเตือนสต็อกต่ำ</div><div class="mt-1 flex items-end gap-2"><span class="text-3xl font-bold text-red-700">' + lowItems.length + '</span><span class="text-sm text-red-600 pb-1">รายการ</span></div></div>';
+    lsHtml += '<div class="card p-4 border border-amber-200 bg-amber-50"><div class="text-xs font-semibold text-amber-700 uppercase tracking-wide">วัสดุสิ้นเปลือง</div><div class="mt-1 flex items-end gap-2"><span class="text-3xl font-bold text-amber-700">' + lowConsumables.length + '</span><span class="text-sm text-amber-700 pb-1">รายการ</span></div></div>';
+    lsHtml += '<div class="card p-4 border border-blue-200 bg-blue-50"><div class="text-xs font-semibold text-blue-700 uppercase tracking-wide">อะไหล่เครื่องจักร</div><div class="mt-1 flex items-end gap-2"><span class="text-3xl font-bold text-blue-700">' + lowSpareParts.length + '</span><span class="text-sm text-blue-700 pb-1">รายการ</span></div></div>';
+    lsHtml += '</div>';
+    lsHtml += buildMiniLowList('วัสดุสิ้นเปลือง', lowConsumables, { border: 'border-amber-200', headBg: 'bg-amber-50', headText: 'text-amber-800', subText: 'text-amber-700', badge: 'bg-amber-100 text-amber-800', tableHead: 'bg-amber-50 text-amber-700' });
+    lsHtml += '<div class="h-4"></div>';
+    lsHtml += buildMiniLowList('อะไหล่เครื่องจักร', lowSpareParts, { border: 'border-red-200', headBg: 'bg-red-50', headText: 'text-red-800', subText: 'text-red-600', badge: 'bg-red-100 text-red-700', tableHead: 'bg-red-50 text-red-700' });
+    var lsReport = document.getElementById('lowStockReport');
+    if (lsReport) lsReport.innerHTML = lsHtml;
 
     var rptTop = document.getElementById('rptTopItems');
     if (rptTop) {
@@ -2762,9 +2778,8 @@ function renderReportLowStock() {
   showLoading('โหลดรายงาน...');
   Promise.all([callAPI('getDashboardStats', AUTH.token), callAPI('getItems', AUTH.token)]).then(function(results) {
     hideLoading();
-    var stats = results[0] || {};
     var items = (results[1] && results[1].data) || [];
-    var low = (stats.low_stock_items || items.filter(function(i) { return i.current_stock <= (i.min_stock || 5); }))
+    var low = items.filter(isLowStockItem)
       .slice()
       .sort(function(a,b){ return (a.current_stock || 0) - (b.current_stock || 0); });
     var consumables = low.filter(function(i) { return getResolvedItemType(i) === 'consumable'; });
@@ -2902,7 +2917,7 @@ function renderReportMyNotifications() {
     hideLoading();
     var cfg = (results[0] && results[0].data) || {};
     var stats = results[1] || {};
-    var lowItems = stats.low_stock_items || [];
+    var lowItems = (stats.low_stock_items || []).filter(isLowStockItem);
     var html = '<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">';
     html += '<div class="card p-4 space-y-3"><h4 class="font-semibold text-gray-800">ช่องทางแจ้งเตือน</h4>';
     html += '<p class="text-sm text-gray-600">Telegram: ' + (cfg.telegram_enabled ? 'เปิด' : 'ปิด') + '</p>';
