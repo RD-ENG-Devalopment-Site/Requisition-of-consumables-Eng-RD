@@ -966,7 +966,7 @@ function getUsers(token) {
     var session = validateSession(token);
     if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์' };
     var users = getSheetData('Users').map(function(u) {
-      return { id:u.id, username:u.username, name:u.name, role:u.role, email:u.email, phone:u.phone||'', active:u.active, last_login:u.last_login||'', avatar:u.avatar||'' };
+      return { id:u.id, username:u.username, name:u.name, role:u.role, email:u.email, phone:u.phone||'', active:u.active, last_login:u.last_login||'', avatar:u.avatar||'', password_mask:'••••••••' };
     });
     return { success: true, data: users };
   } catch(err) { return { success: false, message: err.message }; }
@@ -1005,6 +1005,7 @@ function updateUser(token, userId, userData) {
     }
     var update = { name: userData.name, email: userData.email, phone: userData.phone };
     if (session.role === 'admin') { update.role = userData.role; update.active = userData.active; }
+    if (userData.password) update.password = hashPassword(userData.password);
     if (userData.avatar) update.avatar = userData.avatar;
     updateInSheet('Users', userId, update);
     return { success: true, message: 'แก้ไขข้อมูลเรียบร้อย' };
@@ -1293,7 +1294,18 @@ function getConfig() {
         app_name: CONFIG.APP_NAME, 
         app_version: CONFIG.APP_VERSION,
         app_logo: '',
-        organization_name: 'RD'
+        organization_name: 'RD',
+        organization_email: '',
+        telegram_enabled: false,
+        telegram_bot_token: '',
+        telegram_chat_id: '',
+        line_enabled: false,
+        line_token: '',
+        notification_recipients: '',
+        notify_low_stock: true,
+        notify_pending_approval: true,
+        bridge_url: '',
+        gas_endpoint: ''
       };
     }
     
@@ -1308,8 +1320,24 @@ function getConfig() {
   } catch(err) {
     return {
       success: true,
-      data: { app_name: CONFIG.APP_NAME },
-      app_name: CONFIG.APP_NAME
+      data: {
+        app_name: CONFIG.APP_NAME,
+        app_version: CONFIG.APP_VERSION,
+        organization_name: 'RD',
+        organization_email: '',
+        telegram_enabled: false,
+        telegram_bot_token: '',
+        telegram_chat_id: '',
+        line_enabled: false,
+        line_token: '',
+        notification_recipients: '',
+        notify_low_stock: true,
+        notify_pending_approval: true,
+        bridge_url: '',
+        gas_endpoint: ''
+      },
+      app_name: CONFIG.APP_NAME,
+      app_version: CONFIG.APP_VERSION
     };
   }
 }

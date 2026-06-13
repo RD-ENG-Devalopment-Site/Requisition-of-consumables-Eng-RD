@@ -43,6 +43,13 @@
       telegram_enabled:false,
       telegram_bot_token:'',
       telegram_chat_id:'',
+      line_enabled:false,
+      line_token:'',
+      notification_recipients:'',
+      notify_low_stock:true,
+      notify_pending_approval:true,
+      bridge_url:'',
+      gas_endpoint:'',
       low_stock_threshold:5,
       app_logo:'',
       current_fiscal_year:2568
@@ -297,7 +304,9 @@
     getTransactions: function(token) { return { success:true, data: _get('transactions') || [] }; },
 
     // --- Users ---
-    getUsers: function(token) { return { success:true, data: _get('users') || [] }; },
+    getUsers: function(token) {
+      return { success:true, data: (_get('users') || []).map(function(u){ return Object.assign({}, u, { password_mask:'••••••••' }); }) };
+    },
     addUser: function(token, data) {
       var users = _get('users') || [];
       if (users.find(function(u){ return u.username === data.username; })) return { success:false, message:'Username นี้มีอยู่แล้ว' };
@@ -311,6 +320,7 @@
       var idx = users.findIndex(function(u){ return u.id === id; });
       if (idx === -1) return { success:false, message:'ไม่พบผู้ใช้' };
       Object.keys(data).forEach(function(k){ users[idx][k] = data[k]; });
+      if (data.password) users[idx].password = data.password;
       _set('users', users);
       return { success:true, message:'บันทึกสำเร็จ' };
     },

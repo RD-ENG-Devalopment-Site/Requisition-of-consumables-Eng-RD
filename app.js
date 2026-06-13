@@ -682,6 +682,30 @@ function buildSettingsPage() {
   html += '<i class="fi fi-rr-info mr-1"></i> ถ้าบันทึกแล้วชื่อระบบจะอัปเดตบนแถบด้านบนทันที และค่าตั้งต้นจะถูกใช้ในหน้าที่เกี่ยวข้อง';
   html += '</div>';
   html += '</div>';
+
+  html += '<div class="card p-5 space-y-4">';
+  html += '<div class="flex items-center gap-2"><i class="fi fi-rr-bell text-navy-600"></i><h4 class="font-semibold text-gray-800">การแจ้งเตือน</h4></div>';
+  html += '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">';
+  html += '<div><label class="form-label">Telegram Bot Token</label><input id="settingsTelegramBotToken" class="form-input" value="' + escHtml(cfg.telegram_bot_token || '') + '" placeholder="123456:ABC..."></div>';
+  html += '<div><label class="form-label">Telegram Chat ID</label><input id="settingsTelegramChatId" class="form-input" value="' + escHtml(cfg.telegram_chat_id || '') + '" placeholder="เช่น 123456789"></div>';
+  html += '<div><label class="form-label">LINE Token</label><input id="settingsLineToken" class="form-input" value="' + escHtml(cfg.line_token || '') + '" placeholder="LINE Notify / Messaging token"></div>';
+  html += '<div><label class="form-label">ผู้รับแจ้งเตือน</label><input id="settingsNotifyRecipients" class="form-input" value="' + escHtml(cfg.notification_recipients || '') + '" placeholder="comma separated emails"></div>';
+  html += '</div>';
+  html += '<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">';
+  html += '<label class="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3"><input id="settingsNotifyLowStock" type="checkbox" ' + (cfg.notify_low_stock !== false ? 'checked' : '') + '><span class="text-sm text-gray-700">แจ้งเตือนเมื่อใกล้หมด</span></label>';
+  html += '<label class="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3"><input id="settingsNotifyPending" type="checkbox" ' + (cfg.notify_pending_approval !== false ? 'checked' : '') + '><span class="text-sm text-gray-700">แจ้งเตือนเมื่อมีคำขอรออนุมัติ</span></label>';
+  html += '<label class="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3"><input id="settingsTelegramEnabled" type="checkbox" ' + (cfg.telegram_enabled ? 'checked' : '') + '><span class="text-sm text-gray-700">ใช้ Telegram</span></label>';
+  html += '<label class="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3"><input id="settingsLineEnabled" type="checkbox" ' + (cfg.line_enabled ? 'checked' : '') + '><span class="text-sm text-gray-700">ใช้ LINE</span></label>';
+  html += '</div>';
+  html += '<div><label class="form-label">อีเมลระบบ / รับแจ้งเตือน</label><input id="settingsOrgEmail" class="form-input" value="' + escHtml(cfg.organization_email || '') + '" placeholder="info@company.com"></div>';
+  html += '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">';
+  html += '<div><label class="form-label">Bridge URL</label><input id="settingsBridgeUrl" class="form-input" value="' + escHtml(cfg.bridge_url || '') + '" placeholder="https://.../exec"></div>';
+  html += '<div><label class="form-label">GAS Endpoint</label><input id="settingsGasEndpoint" class="form-input" value="' + escHtml(cfg.gas_endpoint || '') + '" placeholder="https://script.google.com/macros/s/.../exec"></div>';
+  html += '</div>';
+  html += '<div class="rounded-xl bg-amber-50 border border-amber-100 p-4 text-sm text-amber-800">';
+  html += '<i class="fi fi-rr-bell mr-1"></i> ช่องทางแจ้งเตือนด้านบนจะถูกเก็บเป็นค่า config เพื่อให้เราเอาไปผูกการส่งจริงในรอบถัดไปได้ง่าย';
+  html += '</div>';
+  html += '</div>';
   html += '<div class="flex justify-end gap-2">';
   html += '<button onclick="loadPage(\'dashboard\')" class="btn-secondary">ยกเลิก</button>';
   html += '<button onclick="saveSettings()" class="btn-primary"><i class="fi fi-rr-disk mr-1"></i>บันทึกการตั้งค่า</button>';
@@ -694,10 +718,32 @@ function saveSettings() {
   var appNameEl = document.getElementById('settingsAppName');
   var orgNameEl = document.getElementById('settingsOrgName');
   var lowStockEl = document.getElementById('settingsLowStock');
+  var tgTokenEl = document.getElementById('settingsTelegramBotToken');
+  var tgChatEl = document.getElementById('settingsTelegramChatId');
+  var lineTokenEl = document.getElementById('settingsLineToken');
+  var notifyRecipientsEl = document.getElementById('settingsNotifyRecipients');
+  var notifyLowStockEl = document.getElementById('settingsNotifyLowStock');
+  var notifyPendingEl = document.getElementById('settingsNotifyPending');
+  var tgEnabledEl = document.getElementById('settingsTelegramEnabled');
+  var lineEnabledEl = document.getElementById('settingsLineEnabled');
+  var orgEmailEl = document.getElementById('settingsOrgEmail');
+  var bridgeUrlEl = document.getElementById('settingsBridgeUrl');
+  var gasEndpointEl = document.getElementById('settingsGasEndpoint');
   var payload = {
     app_name: appNameEl ? appNameEl.value.trim() : '',
     organization_name: orgNameEl ? orgNameEl.value.trim() : '',
-    low_stock_threshold: lowStockEl && lowStockEl.value !== '' ? parseInt(lowStockEl.value, 10) : ''
+    low_stock_threshold: lowStockEl && lowStockEl.value !== '' ? parseInt(lowStockEl.value, 10) : '',
+    telegram_bot_token: tgTokenEl ? tgTokenEl.value.trim() : '',
+    telegram_chat_id: tgChatEl ? tgChatEl.value.trim() : '',
+    telegram_enabled: !!(tgEnabledEl && tgEnabledEl.checked),
+    line_enabled: !!(lineEnabledEl && lineEnabledEl.checked),
+    line_token: lineTokenEl ? lineTokenEl.value.trim() : '',
+    organization_email: orgEmailEl ? orgEmailEl.value.trim() : '',
+    notification_recipients: notifyRecipientsEl ? notifyRecipientsEl.value.trim() : '',
+    notify_low_stock: !!(notifyLowStockEl && notifyLowStockEl.checked),
+    notify_pending_approval: !!(notifyPendingEl && notifyPendingEl.checked),
+    bridge_url: bridgeUrlEl ? bridgeUrlEl.value.trim() : '',
+    gas_endpoint: gasEndpointEl ? gasEndpointEl.value.trim() : ''
   };
   if (!payload.app_name) { showError('กรุณาระบุชื่อระบบ'); return; }
   showLoading('กำลังบันทึกการตั้งค่า...');
@@ -3024,11 +3070,11 @@ function buildUsersPage() {
 
   html += '<div class="card overflow-hidden"><div class="hidden md:block overflow-x-auto">';
   html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
-  html += '<tr><th class="px-4 py-3 text-left">ชื่อ-นามสกุล</th><th class="px-4 py-3 text-left">Username</th>';
+  html += '<tr><th class="px-4 py-3 text-left">ชื่อ-นามสกุล</th><th class="px-4 py-3 text-left">Username</th><th class="px-4 py-3 text-left">รหัสผ่าน</th>';
   html += '<th class="px-4 py-3 text-left">บทบาท</th><th class="px-4 py-3 text-left">อีเมล</th>';
   html += '<th class="px-4 py-3 text-left">เข้าสู่ระบบล่าสุด</th><th class="px-4 py-3 text-center">สถานะ</th>';
   html += '<th class="px-4 py-3 text-center">จัดการ</th></tr></thead><tbody class="divide-y divide-gray-100">';
-  if (!paged.length) html += '<tr><td colspan="7" class="text-center py-10 text-gray-400">ไม่มีผู้ใช้งาน</td></tr>';
+  if (!paged.length) html += '<tr><td colspan="8" class="text-center py-10 text-gray-400">ไม่มีผู้ใช้งาน</td></tr>';
   paged.forEach(function(u) {
     var roleColor = u.role === 'admin' ? 'bg-navy-100 text-navy-700' : u.role === 'staff' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700';
     html += '<tr>';
@@ -3036,6 +3082,7 @@ function buildUsersPage() {
     html += '<div class="w-8 h-8 rounded-xl bg-navy-100 flex items-center justify-center flex-shrink-0"><i class="fi fi-rr-user text-navy-600 text-sm"></i></div>';
     html += '<span class="font-medium text-gray-700">' + escHtml(u.name || '-') + '</span></div></td>';
     html += '<td class="px-4 py-2.5 font-mono text-xs text-gray-500">' + escHtml(u.username) + '</td>';
+    html += '<td class="px-4 py-2.5 font-mono text-xs text-gray-400">••••••••</td>';
     html += '<td class="px-4 py-2.5"><span class="px-2 py-0.5 rounded-full text-xs font-medium ' + roleColor + '">' + (ROLE_LABELS[u.role] || u.role) + '</span></td>';
     html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(u.email || '-') + '</td>';
     html += '<td class="px-4 py-2.5 text-xs text-gray-400">' + formatDateTime(u.last_login) + '</td>';
@@ -3057,6 +3104,7 @@ function buildUsersPage() {
     html += '<div class="w-10 h-10 rounded-xl bg-navy-100 flex items-center justify-center flex-shrink-0"><i class="fi fi-rr-user text-navy-600"></i></div>';
     html += '<div class="flex-1 min-w-0"><p class="font-semibold text-gray-800 text-sm">' + escHtml(u.name || '-') + '</p>';
     html += '<p class="text-xs text-gray-400">@' + escHtml(u.username) + '</p>';
+    html += '<p class="text-xs text-gray-400 font-mono">รหัสผ่าน ••••••••</p>';
     html += '<div class="flex gap-1.5 mt-1"><span class="px-2 py-0.5 rounded-full text-xs ' + roleColor + '">' + (ROLE_LABELS[u.role] || u.role) + '</span>';
     html += '<span class="px-2 py-0.5 rounded-full text-xs ' + (u.active !== false ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700') + '">' + (u.active !== false ? 'ใช้งาน' : 'ระงับ') + '</span></div></div>';
     html += '<div class="flex gap-1">';
@@ -3078,7 +3126,7 @@ function userFormHTML(user) {
   return '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'
     + fieldHTML('ชื่อ-นามสกุล *', 'uName', 'text', user.name || '', 'sm:col-span-2')
     + fieldHTML('Username *', 'uUsername', 'text', user.username || '')
-    + (!user.id ? '<div><label class="form-label">Password *</label><div class="relative"><input type="password" id="uPassword" class="form-input pr-10" placeholder="รหัสผ่าน"><button type="button" onclick="togglePass(\'uPassword\',this)" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"><i class="fi fi-rr-eye text-sm"></i></button></div></div>' : '')
+    + '<div><label class="form-label">' + (user.id ? 'รหัสผ่านใหม่ (เว้นว่างถ้าไม่เปลี่ยน)' : 'Password *') + '</label><div class="relative"><input type="password" id="uPassword" class="form-input pr-10" placeholder="' + (user.id ? 'เว้นว่างไว้ถ้าไม่เปลี่ยนรหัส' : 'รหัสผ่าน') + '"><button type="button" onclick="togglePass(\'uPassword\',this)" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"><i class="fi fi-rr-eye text-sm"></i></button></div></div>'
     + fieldHTML('อีเมล', 'uEmail', 'email', user.email || '')
     + fieldHTML('เบอร์โทร', 'uPhone', 'text', user.phone || '')
     + '<div><label class="form-label">บทบาท *</label><select id="uRole" class="form-input">' + roleOpts + '</select></div>'
@@ -3129,12 +3177,16 @@ function submitAddUser() {
 
 function submitEditUser(id) {
   var nameEl = document.getElementById('uName');
+  var userEl = document.getElementById('uUsername');
+  var passEl = document.getElementById('uPassword');
   var emailEl = document.getElementById('uEmail');
   var phoneEl = document.getElementById('uPhone');
   var roleEl = document.getElementById('uRole');
 
   var data = { 
     name: nameEl ? nameEl.value : '', 
+    username: userEl ? userEl.value : '', 
+    password: passEl ? passEl.value : '', 
     email: emailEl ? emailEl.value : '', 
     phone: phoneEl ? phoneEl.value : '', 
     role: roleEl ? roleEl.value : 'employee', 
@@ -3142,6 +3194,7 @@ function submitEditUser(id) {
   };
   
   if (!data.name.trim()) { showError('กรุณากรอกชื่อ'); return; }
+  if (!data.username.trim()) { showError('กรุณากรอก Username'); return; }
   showLoading('กำลังบันทึก...');
   callAPI('updateUser', AUTH.token, id, data).then(function(res) {
     hideLoading(); closeModal();
