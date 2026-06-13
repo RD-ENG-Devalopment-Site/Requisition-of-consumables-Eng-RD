@@ -637,6 +637,23 @@ var ITEM_TYPE_LABELS = { consumable: 'วัสดุสิ้นเปลือ
 function getItemTypeLabel(type) {
   return ITEM_TYPE_LABELS[type || 'consumable'] || type || 'consumable';
 }
+function getMachineCatalog() {
+  var map = {};
+  (_itemsData || []).forEach(function(item) {
+    splitMachineList(item.machine_name).forEach(function(name) { map[name] = 1; });
+    splitMachineList(item.compatible_machines).forEach(function(name) { map[name] = 1; });
+  });
+  return Object.keys(map).sort();
+}
+function buildMachineOptions(selected) {
+  var current = String(selected || '').trim();
+  var options = '<option value="">- เลือกเครื่องจักร -</option>';
+  getMachineCatalog().forEach(function(name) {
+    options += '<option value="' + escHtml(name) + '"' + (current === name ? ' selected' : '') + '>' + escHtml(name) + '</option>';
+  });
+  options += '<option value="__custom__"' + (current && getMachineCatalog().indexOf(current) === -1 ? ' selected' : '') + '>กำหนดเอง...</option>';
+  return options;
+}
 function splitMachineList(value) {
   var text = Array.isArray(value) ? value.join('\n') : String(value || '');
   return text.split(/[\n,;]+/).map(function(s) { return String(s || '').trim(); }).filter(function(s, idx, arr) {
@@ -979,7 +996,13 @@ function itemFormHTML(item) {
     + fieldHTML('ขนาดบรรจุ', 'itemSize', 'text', item.size || '')
     + fieldHTML('หน่วย *', 'itemUnit', 'text', item.unit || '')
     + fieldHTML('หมวดหมู่', 'itemCategory', 'text', item.category || 'วัสดุทำความสะอาด')
-    + '<div class="item-spare-field sm:col-span-2"><label class="form-label">สำหรับเครื่องอะไร *</label><input type="text" id="itemMachineName" value="' + escHtml(machineName) + '" class="form-input" placeholder="เช่น เครื่องตัด, เครื่อง Milling, เครื่องบรรจุ"></div>'
+    + '<div class="item-spare-field sm:col-span-2">'
+    + '<button type="button" onclick="toggleMachinePicker()" class="w-full flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100">'
+    + '<span>สำหรับเครื่องจักร</span><i class="fi fi-rr-angle-down text-xs"></i></button>'
+    + '<div id="machinePickerPanel" class="mt-3 hidden space-y-3">'
+    + '<div><label class="form-label">เลือกเครื่องจักร *</label><select id="itemMachineSelect" onchange="syncMachinePicker()" class="form-input">' + buildMachineOptions(machineName) + '</select></div>'
+    + '<div id="itemMachineCustomWrap" class="hidden"><label class="form-label">ระบุชื่อเครื่องเอง</label><input type="text" id="itemMachineCustom" class="form-input" value="' + escHtml(machineName) + '" placeholder="เช่น เครื่องตัด, เครื่อง Milling, เครื่องบรรจุ"></div>'
+    + '</div></div>'
     + '<div class="sm:col-span-2"><label class="form-label">ใช้ได้กับเครื่องจักรไหนบ้าง</label><textarea id="itemCompatibleMachines" rows="3" class="form-input" placeholder="พิมพ์ชื่อเครื่องจักรได้หลายบรรทัด หรือคั่นด้วยจุลภาค">' + escHtml(compatibleMachines) + '</textarea><p class="text-xs text-gray-400 mt-1">ช่วยค้นหาและแสดงผลเวลาเลือกวัสดุที่ใช้ได้หลายเครื่อง</p></div>'
     + '<div class="item-consumable-field">' + fieldHTML('สต็อกเริ่มต้น', 'itemStock', 'number', item.current_stock || 0) + '</div>'
     + fieldHTML('สต็อกขั้นต่ำ', 'itemMinStock', 'number', item.min_stock || 5)
@@ -1003,6 +1026,11 @@ function toggleItemFormTypeFields() {
     el.style.display = type === 'consumable' ? '' : 'none';
   });
   toggleItemSerialFields();
+  if (type === 'spare_part') syncMachinePicker(true);
+  else {
+    var panel = document.getElementById('machinePickerPanel');
+    if (panel) panel.classList.add('hidden');
+  }
 }
 
 function toggleItemSerialFields() {
@@ -1012,6 +1040,30 @@ function toggleItemSerialFields() {
   document.querySelectorAll('.item-serial-field').forEach(function(el) {
     el.style.display = show ? '' : 'none';
   });
+}
+
+function toggleMachinePicker(forceOpen) {
+  var panel = document.getElementById('machinePickerPanel');
+  if (!panel) return;
+  var shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : panel.classList.contains('hidden');
+  if (shouldOpen) panel.classList.remove('hidden');
+  else panel.classList.add('hidden');
+  syncMachinePicker();
+}
+
+function syncMachinePicker(forceOpen) {
+  var typeEl = document.getElementById('itemType');
+  var panel = document.getElementById('machinePickerPanel');
+  var selectEl = document.getElementById('itemMachineSelect');
+  var customWrap = document.getElementById('itemMachineCustomWrap');
+  var customEl = document.getElementById('itemMachineCustom');
+  if (!typeEl || typeEl.value !== 'spare_part') return;
+  if (forceOpen && panel) panel.classList.remove('hidden');
+  if (!selectEl || !customWrap || !customEl) return;
+  var showCustom = selectEl.value === '__custom__';
+  customWrap.classList.toggle('hidden', !showCustom);
+  if (!showCustom && selectEl.value) customEl.value = selectEl.value;
+  if (showCustom && !customEl.value) customEl.focus();
 }
 
 function submitAddItem() {
@@ -1040,7 +1092,8 @@ function readItemForm() {
   var sizeEl = document.getElementById('itemSize');
   var catEl = document.getElementById('itemCategory');
   var typeEl = document.getElementById('itemType');
-  var machineEl = document.getElementById('itemMachineName');
+  var machineEl = document.getElementById('itemMachineSelect');
+  var machineCustomEl = document.getElementById('itemMachineCustom');
   var compatEl = document.getElementById('itemCompatibleMachines');
   var stockEl = document.getElementById('itemStock');
   var minEl = document.getElementById('itemMinStock');
@@ -1053,6 +1106,7 @@ function readItemForm() {
   var unit = unitEl ? unitEl.value : '';
   var itemType = typeEl ? typeEl.value : 'consumable';
   var machineName = machineEl ? machineEl.value.trim() : '';
+  if (machineName === '__custom__') machineName = machineCustomEl ? machineCustomEl.value.trim() : '';
   var compatibleMachines = compatEl ? compatEl.value.trim() : '';
   var condition = conditionEl ? conditionEl.value : '';
   var serialTracking = serialTrackEl ? serialTrackEl.checked : false;
