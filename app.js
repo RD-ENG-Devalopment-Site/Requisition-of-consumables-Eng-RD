@@ -287,8 +287,8 @@ function loadPage(page) {
     dashboard: 'ภาพรายงานระบบ', stock: 'สต็อกคงเหลือ', items: 'รายการวัสดุ',
     receive: 'รับวัสดุเข้าคลัง', stocktake: 'นับสต็อก', printqr: 'พิมพ์ QR สติ๊กเกอร์', withdraw: 'เบิกวัสดุ', approve: 'อนุมัติการเบิก',
     transactions: 'ประวัติเคลื่อนไหว', reports: 'รายงาน',
-    report_low_stock: 'แจ้งเตือนสต็อกต่ำ', report_edit_history: 'ประวัติการแก้ไขรายการ', report_machine_mgmt: 'จัดการเครื่องจักร/หมวดเครื่องจักร',
-    report_my_pending: 'รายการที่กำลังรออนุมัติของตัวเอง', report_my_transactions: 'ประวัติการเคลื่อนไหวของตัวเอง', report_my_notifications: 'แจ้งเตือนของตัวเอง',
+    report_low_stock: 'แจ้งเตือนสต็อกต่ำ', report_edit_history: 'ประวัติการแก้ไขรายการ', report_machine_mgmt: 'สรุปอะไหล่เครื่องจักร',
+    report_my_pending: 'รายการที่กำลังรอ', report_my_transactions: 'รายงานการเบิกวัสดุ', report_my_notifications: 'แจ้งเตือนของตัวเอง',
     users: 'จัดการผู้ใช้งาน', settings: 'ตั้งค่าระบบ', profile: 'โปรไฟล์',
   };
   
@@ -2767,19 +2767,42 @@ function renderReportLowStock() {
     var low = (stats.low_stock_items || items.filter(function(i) { return i.current_stock <= (i.min_stock || 5); }))
       .slice()
       .sort(function(a,b){ return (a.current_stock || 0) - (b.current_stock || 0); });
-    var html = '<div class="card overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-sm">';
-    html += '<thead class="bg-gray-50 text-xs text-gray-600"><tr><th class="px-4 py-3 text-left">เลขไอเท็ม</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">ประเภท</th><th class="px-4 py-3 text-left">หมวด</th><th class="px-4 py-3 text-center">คงเหลือ</th><th class="px-4 py-3 text-center">ขั้นต่ำ</th></tr></thead><tbody class="divide-y divide-gray-100">';
-    if (!low.length) html += '<tr><td colspan="6" class="text-center py-10 text-gray-400">ไม่มีรายการใกล้หมด</td></tr>';
-    low.forEach(function(i) {
-      html += '<tr><td class="px-4 py-2.5 font-mono text-xs text-navy-700">' + escHtml(i.item_code || '-') + '</td>';
-      html += '<td class="px-4 py-2.5 font-medium text-gray-700">' + escHtml(i.name || '-') + '</td>';
-      html += '<td class="px-4 py-2.5 text-xs">' + escHtml(getItemTypeLabel(getResolvedItemType(i))) + '</td>';
-      html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(i.category || '-') + '</td>';
-      html += '<td class="px-4 py-2.5 text-center font-bold">' + (i.current_stock || 0) + ' ' + escHtml(i.unit || '') + '</td>';
-      html += '<td class="px-4 py-2.5 text-center text-gray-500">' + (i.min_stock || '-') + '</td></tr>';
-    });
-    html += '</tbody></table></div></div>';
-    renderReportShell('แจ้งเตือนสต็อกต่ำ', 'รายการที่ควรเติมสต็อกก่อนกระทบงาน', html);
+    var consumables = low.filter(function(i) { return getResolvedItemType(i) === 'consumable'; });
+    var spareParts = low.filter(function(i) { return getResolvedItemType(i) === 'spare_part'; });
+
+    function buildLowStockSection(title, list, tone) {
+      var sec = '<section class="card overflow-hidden border ' + tone.border + '">';
+      sec += '<div class="px-4 py-3 border-b ' + tone.headBg + ' flex items-center justify-between gap-3">';
+      sec += '<div><h3 class="font-semibold ' + tone.headText + '">' + escHtml(title) + '</h3>';
+      sec += '<p class="text-xs ' + tone.subText + '">รายการที่ต่ำกว่าขั้นต่ำและควรเติมก่อนใช้งานสะดุด</p></div>';
+      sec += '<span class="px-2.5 py-1 rounded-full text-xs font-semibold ' + tone.badge + '">' + list.length + ' รายการ</span>';
+      sec += '</div>';
+      sec += '<div class="overflow-x-auto"><table class="w-full text-sm">';
+      sec += '<thead class="' + tone.tableHead + ' text-xs"><tr>';
+      sec += '<th class="px-4 py-3 text-left">เลขไอเท็ม</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">หมวด</th><th class="px-4 py-3 text-left">ประเภท</th><th class="px-4 py-3 text-center">คงเหลือ</th><th class="px-4 py-3 text-center">ขั้นต่ำ</th>';
+      sec += '</tr></thead><tbody class="divide-y divide-gray-100">';
+      if (!list.length) sec += '<tr><td colspan="6" class="text-center py-10 text-gray-400">ไม่มีรายการใกล้หมด</td></tr>';
+      list.forEach(function(i) {
+        sec += '<tr><td class="px-4 py-2.5 font-mono text-xs text-navy-700">' + escHtml(i.item_code || '-') + '</td>';
+        sec += '<td class="px-4 py-2.5 font-medium text-gray-700">' + escHtml(i.name || '-') + '</td>';
+        sec += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(i.category || '-') + '</td>';
+        sec += '<td class="px-4 py-2.5 text-xs">' + escHtml(getItemTypeLabel(getResolvedItemType(i))) + '</td>';
+        sec += '<td class="px-4 py-2.5 text-center font-bold">' + (i.current_stock || 0) + ' ' + escHtml(i.unit || '') + '</td>';
+        sec += '<td class="px-4 py-2.5 text-center text-gray-500">' + (i.min_stock || '-') + '</td></tr>';
+      });
+      sec += '</tbody></table></div></section>';
+      return sec;
+    }
+
+    var html = '<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">';
+    html += '<div class="card p-4 border border-red-200 bg-red-50"><div class="text-xs font-semibold text-red-600 uppercase tracking-wide">แจ้งเตือนสต็อกต่ำ</div><div class="mt-1 flex items-end gap-2"><span class="text-3xl font-bold text-red-700">' + low.length + '</span><span class="text-sm text-red-600 pb-1">รายการ</span></div><div class="mt-2 text-xs text-red-600">แยกแสดงวัสดุสิ้นเปลืองและอะไหล่เครื่องจักรในหน้าเดียว</div></div>';
+    html += '<div class="card p-4 border border-amber-200 bg-amber-50"><div class="text-xs font-semibold text-amber-700 uppercase tracking-wide">วัสดุสิ้นเปลือง</div><div class="mt-1 flex items-end gap-2"><span class="text-3xl font-bold text-amber-700">' + consumables.length + '</span><span class="text-sm text-amber-700 pb-1">รายการ</span></div></div>';
+    html += '<div class="card p-4 border border-blue-200 bg-blue-50"><div class="text-xs font-semibold text-blue-700 uppercase tracking-wide">อะไหล่เครื่องจักร</div><div class="mt-1 flex items-end gap-2"><span class="text-3xl font-bold text-blue-700">' + spareParts.length + '</span><span class="text-sm text-blue-700 pb-1">รายการ</span></div></div>';
+    html += '</div>';
+    html += buildLowStockSection('วัสดุสิ้นเปลือง', consumables, { border: 'border-amber-200', headBg: 'bg-amber-50', headText: 'text-amber-800', subText: 'text-amber-700', badge: 'bg-amber-100 text-amber-800', tableHead: 'bg-amber-50 text-amber-700' });
+    html += '<div class="h-4"></div>';
+    html += buildLowStockSection('อะไหล่เครื่องจักร', spareParts, { border: 'border-red-200', headBg: 'bg-red-50', headText: 'text-red-800', subText: 'text-red-600', badge: 'bg-red-100 text-red-700', tableHead: 'bg-red-50 text-red-700' });
+    renderReportShell('แจ้งเตือนสต็อกต่ำ', 'สรุปรายการต่ำกว่าขั้นต่ำ แยกวัสดุสิ้นเปลืองและอะไหล่เครื่องจักรไว้ดูง่ายในหน้าเดียว', html);
   }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
@@ -2827,7 +2850,7 @@ function renderReportMachineMgmt() {
       html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(machineMap[name].items.join(', ')) + '</td></tr>';
     });
     html += '</tbody></table></div></div>';
-    renderReportShell('จัดการเครื่องจักร/หมวดเครื่องจักร', 'สรุปเครื่องจักรที่ผูกกับวัสดุ และรายการที่ใช้ร่วมกัน', html);
+    renderReportShell('สรุปอะไหล่เครื่องจักร', 'สรุปเครื่องจักรที่ผูกกับวัสดุ และรายการที่ใช้ร่วมกัน', html);
   }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
@@ -2848,7 +2871,7 @@ function renderReportMyPending() {
       html += '<td class="px-4 py-2.5 text-center"><span class="badge-pending px-2 py-0.5 rounded-full text-xs">รออนุมัติ</span></td></tr>';
     });
     html += '</tbody></table></div></div>';
-    renderReportShell('รายการที่กำลังรออนุมัติของตัวเอง', 'ติดตามคำขอเบิกของคุณแบบเรียลไทม์', html);
+    renderReportShell('รายการที่กำลังรอ', 'ติดตามคำขอเบิกของคุณแบบเรียลไทม์', html);
   }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
@@ -2869,7 +2892,7 @@ function renderReportMyTransactions() {
       html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(t.note || '-') + '</td></tr>';
     });
     html += '</tbody></table></div></div>';
-    renderReportShell('ประวัติการเคลื่อนไหวของตัวเอง', 'รายการเคลื่อนไหวเฉพาะบัญชีของคุณ', html);
+    renderReportShell('รายงานการเบิกวัสดุ', 'รายการเคลื่อนไหวเฉพาะบัญชีของคุณ', html);
   }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
