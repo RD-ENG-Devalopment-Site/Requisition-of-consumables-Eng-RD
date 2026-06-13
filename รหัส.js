@@ -265,7 +265,7 @@ function initializeSheets() {
         size: item.size,
         unit: item.unit,
         category: item.category,
-        item_type: item.item_type || 'consumable',
+        item_type: inferItemTypeFromCategory(item.category || item.item_type || ''),
         part_no: item.part_no || '',
         machine_name: item.machine_name || '',
         condition_status: item.condition_status || '',
@@ -402,20 +402,25 @@ function getItemById(token, itemId) {
   } catch(err) { return { success: false, message: err.message }; }
 }
 
+function inferItemTypeFromCategory(category) {
+  return String(category || '').trim().indexOf('หมวด') === 0 ? 'consumable' : 'spare_part';
+}
+
 function addItem(token, itemData) {
   try {
     var session = validateSession(token);
     if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์ดำเนินการ' };
     var items = getSheetData('Items');
     var code = 'SUP-' + String(items.length + 1).padStart(3, '0');
+    var category = itemData.category || 'อื่นๆ';
     var newItem = {
       id: Utilities.getUuid(),
       item_code: code,
       name: itemData.name,
       size: itemData.size || '',
       unit: itemData.unit,
-      category: itemData.category || 'อื่นๆ',
-      item_type: itemData.item_type || 'consumable',
+      category: category,
+      item_type: inferItemTypeFromCategory(category),
       part_no: itemData.part_no || '',
       machine_name: itemData.machine_name || '',
       compatible_machines: itemData.compatible_machines || '',
@@ -438,7 +443,7 @@ function addItem(token, itemData) {
 
 function normalizeItemRecord(item) {
   if (!item) return item;
-  if (!item.item_type) item.item_type = 'consumable';
+  item.item_type = inferItemTypeFromCategory(item.category || item.item_type || '');
   if (typeof item.serial_tracking === 'undefined') item.serial_tracking = false;
   if (!item.condition_status) item.condition_status = '';
   if (typeof item.spare_part_units === 'undefined') item.spare_part_units = '';
@@ -454,12 +459,13 @@ function updateItem(token, itemId, itemData) {
     if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์ดำเนินการ' };
     
     // สร้างก้อนอัปเดต โดยตรวจสอบโครงสร้างฟิลด์ให้ครบถ้วน เพื่อไม่ให้ฟิลด์เดิมหลุดหาย
+    var category = itemData.category || '';
     var updatePayload = {
       name: itemData.name,
       size: itemData.size,
       unit: itemData.unit,
-      category: itemData.category,
-      item_type: itemData.item_type || 'consumable',
+      category: category,
+      item_type: inferItemTypeFromCategory(category),
       part_no: itemData.part_no || '',
       machine_name: itemData.machine_name || '',
       compatible_machines: itemData.compatible_machines || '',
@@ -531,7 +537,7 @@ function addReceive(token, receiveData) {
         item_id: item.id,
         item_name: item.name,
         item_code: item.item_code,
-        item_type: item.item_type || receiveData.item_type || 'consumable',
+        item_type: inferItemTypeFromCategory(item.category || item.item_type || ''),
         quantity: qty,
         unit: item.unit,
         received_by: session.user_id,
@@ -547,7 +553,7 @@ function addReceive(token, receiveData) {
         item_id: item.id,
         item_name: item.name,
         item_code: item.item_code,
-        item_type: item.item_type || receiveData.item_type || 'consumable',
+        item_type: inferItemTypeFromCategory(item.category || item.item_type || ''),
         quantity: qty,
         stock_before: stockBefore,
         stock_after: stockAfter,
@@ -618,7 +624,7 @@ function addWithdrawal(token, wdData) {
       item_id: item.id,
       item_name: item.name,
       item_code: item.item_code,
-      item_type: item.item_type || wdData.item_type || 'consumable',
+      item_type: inferItemTypeFromCategory(item.category || item.item_type || ''),
       quantity_requested: qty,
       quantity_approved: 0,
       unit: item.unit,
@@ -711,7 +717,7 @@ function approveWithdrawal(token, wdId, qtyApproved) {
         item_id: item.id,
         item_name: item.name,
         item_code: item.item_code,
-        item_type: wd.item_type || item.item_type || 'consumable',
+        item_type: inferItemTypeFromCategory(item.category || item.item_type || ''),
         quantity: qty,
         stock_before: stockBefore,
         stock_after: stockAfter,
@@ -1344,7 +1350,7 @@ function addWithdrawal(token, wdData) {
         item_id: item.id,
         item_name: item.name,
         item_code: item.item_code,
-        item_type: item.item_type || entry.item_type || 'consumable',
+        item_type: inferItemTypeFromCategory(item.category || item.item_type || ''),
         quantity: qty,
         quantity_requested: qty,
         quantity_approved: 0,
