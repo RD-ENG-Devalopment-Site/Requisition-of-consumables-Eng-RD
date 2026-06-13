@@ -405,13 +405,25 @@ function getItemById(token, itemId) {
 function inferItemTypeFromCategory(category) {
   return String(category || '').trim().indexOf('หมวด') === 0 ? 'consumable' : 'spare_part';
 }
+function buildNextItemCode(items) {
+  var maxNum = 0;
+  (items || []).forEach(function(i) {
+    var code = String(i.item_code || '');
+    var m = code.match(/(\d+)\s*$/);
+    if (m) {
+      var num = parseInt(m[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
+  });
+  return 'ITM-' + String(maxNum + 1).padStart(4, '0');
+}
 
 function addItem(token, itemData) {
   try {
     var session = validateSession(token);
     if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์ดำเนินการ' };
     var items = getSheetData('Items');
-    var code = 'SUP-' + String(items.length + 1).padStart(3, '0');
+    var code = String(itemData.item_code || '').trim() || buildNextItemCode(items);
     var category = itemData.category || 'อื่นๆ';
     var newItem = {
       id: Utilities.getUuid(),
@@ -461,6 +473,7 @@ function updateItem(token, itemId, itemData) {
     // สร้างก้อนอัปเดต โดยตรวจสอบโครงสร้างฟิลด์ให้ครบถ้วน เพื่อไม่ให้ฟิลด์เดิมหลุดหาย
     var category = itemData.category || '';
     var updatePayload = {
+      item_code: String(itemData.item_code || '').trim(),
       name: itemData.name,
       size: itemData.size,
       unit: itemData.unit,
@@ -476,6 +489,7 @@ function updateItem(token, itemId, itemData) {
       description: itemData.description || '',
       image_file_id: itemData.image_file_id || ''
     };
+    if (!updatePayload.item_code) delete updatePayload.item_code;
 
     // 🟢 จุดสำคัญ: หน้าบ้านส่งฟิลด์ current_stock มาจากการนับจริง (Stocktake)
     // ระบบหลังบ้านต้องตรวจสอบและอัปเดตค่านี้ลงฐานข้อมูลด้วย ยอดนับจริงจึงจะเปลี่ยนตาม

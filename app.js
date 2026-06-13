@@ -769,7 +769,7 @@ function buildItemsPage() {
   html += '<div class="card overflow-hidden">';
   html += '<div class="hidden md:block overflow-x-auto">';
   html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-gray-600 text-xs">';
-  html += '<tr><th class="px-4 py-3 text-left w-10">#</th><th class="px-4 py-3 text-left w-14">รูป</th><th class="px-4 py-3 text-left">รหัส</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">ประเภท</th><th class="px-4 py-3 text-left">เครื่องจักร</th><th class="px-4 py-3 text-left">ขนาด</th><th class="px-4 py-3 text-left">หน่วย</th><th class="px-4 py-3 text-left">หมวดหมู่</th><th class="px-4 py-3 text-center">สต็อก</th><th class="px-4 py-3 text-center">ขั้นต่ำ</th><th class="px-4 py-3 text-center">สถานะ</th><th class="px-4 py-3 text-center">จัดการ</th></tr></thead>';
+  html += '<tr><th class="px-4 py-3 text-left w-10">#</th><th class="px-4 py-3 text-left w-14">รูป</th><th class="px-4 py-3 text-left">เลขไอเท็ม</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">ประเภท</th><th class="px-4 py-3 text-left">เครื่องจักร</th><th class="px-4 py-3 text-left">ขนาด</th><th class="px-4 py-3 text-left">หน่วย</th><th class="px-4 py-3 text-left">หมวดหมู่</th><th class="px-4 py-3 text-center">สต็อก</th><th class="px-4 py-3 text-center">ขั้นต่ำ</th><th class="px-4 py-3 text-center">สถานะ</th><th class="px-4 py-3 text-center">จัดการ</th></tr></thead>';
   html += '<tbody class="divide-y divide-gray-100">';
   if (paged.length === 0) {
     html += '<tr><td colspan="13" class="text-center py-10 text-gray-400">ไม่พบรายการ</td></tr>';
@@ -870,10 +870,10 @@ function applyItemFilter() {
 }
 
 function downloadCSVSample() {
-  var csv = 'รหัส,ชื่อวัสดุ,ประเภท,ขนาด,หน่วย,หมวดหมู่,สำหรับเครื่องอะไร,ใช้ได้กับเครื่องจักรไหนบ้าง,สถานะสภาพ,ติดตามSerial,Serials,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด\n';
-  csv += 'SUP-001,ถุงมือยาง (ไม่มีแป้ง) สีฟ้า,consumable,size S,กล่อง,อุปกรณ์ป้องกัน,,เครื่องซีล,เครื่องแพ็ค,,,,20,5,ถุงมือยางไม่มีแป้งสำหรับงานทั่วไป\n';
-  csv += 'SP-001,สายพานมอเตอร์,spare_part,,เส้น,อะไหล่เครื่องจักร,เครื่องบรรจุ,เครื่องบรรจุ;เครื่องแพ็ค,good,true,SP-001-A;SP-001-B,2,1,สายพานอะไหล่เครื่องจักร\n';
-  csv += 'SUP-003,สำลี,consumable,200 g.,ถุง,วัสถุดิบทางการแพทย์,,เครื่องแพ็ค, ,,,,50,10,สำลีสะอาดบริสุทธิ์ 200 กรัม\n';
+  var csv = 'เลขไอเท็ม,ชื่อวัสดุ,ประเภท,ขนาด,หน่วย,หมวดหมู่,สำหรับเครื่องอะไร,ใช้ได้กับเครื่องจักรไหนบ้าง,สถานะสภาพ,ติดตามSerial,Serials,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด\n';
+  csv += 'ITM-0001,ถุงมือยาง (ไม่มีแป้ง) สีฟ้า,consumable,size S,กล่อง,อุปกรณ์ป้องกัน,,เครื่องซีล,เครื่องแพ็ค,,,,20,5,ถุงมือยางไม่มีแป้งสำหรับงานทั่วไป\n';
+  csv += 'ITM-0002,สายพานมอเตอร์,spare_part,,เส้น,อะไหล่เครื่องจักร,เครื่องบรรจุ,เครื่องบรรจุ;เครื่องแพ็ค,good,true,SP-001-A;SP-001-B,2,1,สายพานอะไหล่เครื่องจักร\n';
+  csv += 'ITM-0003,สำลี,consumable,200 g.,ถุง,วัสถุดิบทางการแพทย์,,เครื่องแพ็ค, ,,,,50,10,สำลีสะอาดบริสุทธิ์ 200 กรัม\n';
   var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   var link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
@@ -891,8 +891,8 @@ function openImportCSVModal() {
   body += '<p class="font-semibold mb-1">หมายเหตุ</p>';
   body += '<ul class="list-disc list-inside space-y-0.5">';
   body += '<li>รองรับไฟล์ .csv เท่านั้น (UTF-8)</li>';
-  body += '<li>คอลัมน์หลัก: รหัส,ชื่อวัสดุ,ประเภท,ขนาด,หน่วย,หมวดหมู่,สำหรับเครื่องอะไร,ใช้ได้กับเครื่องจักรไหนบ้าง,สถานะสภาพ,ติดตามSerial,Serials,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด</li>';
-  body += '<li>หากไม่มีรหัส ระบบจะสร้างรหัสอัตโนมัติ</li>';
+  body += '<li>คอลัมน์หลัก: เลขไอเท็ม,ชื่อวัสดุ,ประเภท,ขนาด,หน่วย,หมวดหมู่,สำหรับเครื่องอะไร,ใช้ได้กับเครื่องจักรไหนบ้าง,สถานะสภาพ,ติดตามSerial,Serials,สต็อกเริ่มต้น,สต็อกขั้นต่ำ,รายละเอียด</li>';
+  body += '<li>หากไม่มีเลขไอเท็ม ระบบจะสร้างให้เองอัตโนมัติ</li>';
   body += '</ul></div>';
   body += '<div id="csvImportPreview"></div>';
   body += '</div>';
@@ -913,9 +913,9 @@ function previewCSVImport() {
     var html = '<p class="text-sm font-medium text-gray-700 mb-2">ตัวอย่างข้อมูล (' + _csvImportRows.length + ' รายการ)</p>';
     html += '<div class="max-h-64 overflow-y-auto border border-gray-200 rounded-xl">';
     html += '<table class="w-full text-xs"><thead class="bg-gray-50 text-gray-600 sticky top-0">';
-    html += '<tr><th class="px-2 py-1.5 text-left">รหัส</th><th class="px-2 py-1.5 text-left">ชื่อ</th><th class="px-2 py-1.5 text-left">ประเภท</th><th class="px-2 py-1.5 text-left">เครื่องจักร</th><th class="px-2 py-1.5 text-left">หน่วย</th><th class="px-2 py-1.5 text-center">สต็อก</th><th class="px-2 py-1.5 text-center">ขั้นต่ำ</th></tr></thead><tbody class="divide-y divide-gray-100">';
+    html += '<tr><th class="px-2 py-1.5 text-left">เลขไอเท็ม</th><th class="px-2 py-1.5 text-left">ชื่อ</th><th class="px-2 py-1.5 text-left">ประเภท</th><th class="px-2 py-1.5 text-left">เครื่องจักร</th><th class="px-2 py-1.5 text-left">หน่วย</th><th class="px-2 py-1.5 text-center">สต็อก</th><th class="px-2 py-1.5 text-center">ขั้นต่ำ</th></tr></thead><tbody class="divide-y divide-gray-100">';
     _csvImportRows.forEach(function(row) {
-      html += '<tr><td class="px-2 py-1.5">' + escHtml(row['รหัส'] || '-') + '</td>';
+      html += '<tr><td class="px-2 py-1.5">' + escHtml(row['เลขไอเท็ม'] || row['รหัส'] || '-') + '</td>';
       html += '<td class="px-2 py-1.5">' + escHtml(row['ชื่อวัสดุ'] || '') + '</td>';
       html += '<td class="px-2 py-1.5">' + escHtml(getItemTypeLabel(inferItemTypeFromCategory(row['หมวดหมู่'] || ''))) + '</td>';
       html += '<td class="px-2 py-1.5">' + escHtml((row['สำหรับเครื่องอะไร'] || '') + (row['ใช้ได้กับเครื่องจักรไหนบ้าง'] ? ' • ' + row['ใช้ได้กับเครื่องจักรไหนบ้าง'] : '')) + '</td>';
@@ -950,7 +950,7 @@ function handleCSVImport() {
   showConfirm('ยืนยันนำเข้า', 'พบ ' + rows.length + ' รายการ ยืนยันนำเข้า?', function() {
     showLoading('กำลังนำเข้า ' + rows.length + ' รายการ...');
     var promises = rows.map(function(row) {
-      var itemCode = row['รหัส'] || '';
+      var itemCode = row['เลขไอเท็ม'] || row['รหัส'] || '';
       var name = row['ชื่อวัสดุ'] || '';
       if (!name) return Promise.resolve({ success: false, message: 'ขาดชื่อวัสดุ' });
     var data = {
@@ -988,7 +988,7 @@ Promise.all(promises).then(function() {
 var _printQRFilter = { search: '', category: 'all' };
 
 function openAddItemModal() {
-  _itemImageFileId = null;
+  _itemImageFileId = null;
   var body = itemFormHTML({});
   var footer = '<button onclick="closeModal()" class="btn-secondary">ยกเลิก</button>'
     + '<button onclick="submitAddItem()" class="btn-primary"><i class="fi fi-rr-plus mr-1"></i>เพิ่มวัสดุ</button>';
@@ -1015,11 +1015,13 @@ function itemFormHTML(item) {
     imgSection = '<div class="sm:col-span-2"><label class="form-label">รูปภาพวัสดุ</label><input type="file" id="itemImageFile" accept="image/*" onchange="handleItemImageUpload(this)" class="form-input py-1.5"><p class="text-xs text-gray-400 mt-1">รองรับ JPG, PNG (สูงสุด 5MB)</p><div id="itemImagePreview"></div></div>';
   }
   var type = getResolvedItemType(item);
+  var itemCode = item.item_code || suggestNextItemCode();
   var condition = item.condition_status || '';
   var serials = item.spare_part_units || '';
   var machineName = item.machine_name || '';
   var compatibleMachines = Array.isArray(item.compatible_machines) ? item.compatible_machines.join('\n') : (item.compatible_machines || '');
   return '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'
+    + fieldHTML('เลขไอเท็ม *', 'itemCode', 'text', itemCode, 'sm:col-span-2')
     + fieldHTML('ชื่อวัสดุ *', 'itemName', 'text', item.name || '', 'sm:col-span-2')
     + '<div><label class="form-label">ประเภท *</label><select id="itemType" onchange="toggleItemFormTypeFields()" class="form-input"><option value="consumable"' + (type === 'consumable' ? ' selected' : '') + '>วัสดุสิ้นเปลือง</option><option value="spare_part"' + (type === 'spare_part' ? ' selected' : '') + '>อะไหล่เครื่องจักร</option></select></div>'
     + fieldHTML('ขนาดบรรจุ', 'itemSize', 'text', item.size || '')
@@ -1043,6 +1045,19 @@ function fieldHTML(label, id, type, value, extra) {
   return '<div class="' + (extra || '') + '">'
     + '<label class="form-label">' + escHtml(label) + '</label>'
     + '<input type="' + type + '" id="' + id + '" value="' + escHtml(String(value)) + '" class="form-input"></div>';
+}
+
+function suggestNextItemCode() {
+  var maxNum = 0;
+  (_itemsData || []).forEach(function(i) {
+    var code = String(i.item_code || '');
+    var m = code.match(/(\d+)\s*$/);
+    if (m) {
+      var num = parseInt(m[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
+  });
+  return 'ITM-' + String(maxNum + 1).padStart(4, '0');
 }
 
 function toggleItemFormTypeFields() {
@@ -1121,6 +1136,7 @@ function submitEditItem(id) {
 }
 function readItemForm() {
   var nameEl = document.getElementById('itemName');
+  var codeEl = document.getElementById('itemCode');
   var unitEl = document.getElementById('itemUnit');
   var sizeEl = document.getElementById('itemSize');
   var catEl = document.getElementById('itemCategory');
@@ -1136,6 +1152,7 @@ function readItemForm() {
   var imgIdEl = document.getElementById('itemImageFileId');
   
   var name = nameEl ? nameEl.value : '';
+  var itemCode = codeEl ? codeEl.value.trim() : '';
   var unit = unitEl ? unitEl.value : '';
   var itemType = typeEl ? typeEl.value : 'consumable';
   var category = catEl ? catEl.value.trim() : '';
@@ -1146,6 +1163,7 @@ function readItemForm() {
   var condition = conditionEl ? conditionEl.value : '';
   var serialTracking = serialTrackEl ? serialTrackEl.checked : false;
   var serials = serialsEl ? (serialsEl.value || '') : '';
+  if (!itemCode) { itemCode = suggestNextItemCode(); }
   if (!name.trim()) { showError('กรุณากรอกชื่อวัสดุ'); return null; }
   if (!unit.trim()) { showError('กรุณากรอกหน่วย'); return null; }
   if (!category) { showError('กรุณากรอกหมวดหมู่'); return null; }
@@ -1156,6 +1174,7 @@ function readItemForm() {
   
   return {
     name: name, size: sizeEl ? sizeEl.value : '',
+    item_code: itemCode,
     unit: unit, category: category,
     item_type: resolvedType,
     machine_name: machineName,
@@ -1194,6 +1213,7 @@ function handleItemImageUpload(input) {
 }
 function removeItemImage() {
   _itemImageFileId = null;
+  var code = document.getElementById('itemCode') ? document.getElementById('itemCode').value : '';
   var name = document.getElementById('itemName') ? document.getElementById('itemName').value : '';
   var size = document.getElementById('itemSize') ? document.getElementById('itemSize').value : '';
   var unit = document.getElementById('itemUnit') ? document.getElementById('itemUnit').value : '';
@@ -1205,6 +1225,7 @@ function removeItemImage() {
   var serialTrackEl = document.getElementById('itemSerialTracking');
   var serialsEl = document.getElementById('itemSerials');
   var fakeItem = {
+    item_code: code,
     name: name, size: size, unit: unit, category: cat,
     item_type: inferItemTypeFromCategory(cat),
     condition_status: conditionEl ? conditionEl.value : '',
@@ -1459,7 +1480,7 @@ function buildStockContent(data) {
     return html + '</div>';
   } else {
     var html = '<div class="card overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
-    html += '<tr><th class="px-4 py-3 text-left">รหัส</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">ประเภท</th><th class="px-4 py-3 text-left">เครื่องจักร</th><th class="px-4 py-3 text-left">หน่วย</th>';
+    html += '<tr><th class="px-4 py-3 text-left">เลขไอเท็ม</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">ประเภท</th><th class="px-4 py-3 text-left">เครื่องจักร</th><th class="px-4 py-3 text-left">หน่วย</th>';
     html += '<th class="px-4 py-3 text-center">สต็อก</th><th class="px-4 py-3 text-center">ขั้นต่ำ</th><th class="px-4 py-3 text-center">สถานะ</th><th class="px-4 py-3 text-center">การดำเนินการ</th></tr>';
     html += '</thead><tbody class="divide-y divide-gray-100">';
     if (data.length === 0) html += '<tr><td colspan="9" class="text-center py-8 text-gray-400">ไม่พบรายการ</td></tr>';
@@ -1669,7 +1690,7 @@ function buildStocktakePage() {
   html += '<p class="text-xs text-gray-500">กรอกจำนวนที่นับได้จริงในช่อง "นับจริง" แล้วกดบันทึก ระบบจะปรับยอดให้อัตโนมัติ</p>';
   html += '<div class="card overflow-hidden"><div class="overflow-x-auto">';
   html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-gray-600 text-xs">';
-  html += '<tr><th class="px-4 py-3 text-left">รหัส/ชื่อ</th><th class="px-4 py-3 text-center">ระบบ</th><th class="px-4 py-3 text-center">นับจริง</th><th class="px-4 py-3 text-center">ผลต่าง</th></tr></thead>';
+  html += '<tr><th class="px-4 py-3 text-left">เลขไอเท็ม/ชื่อ</th><th class="px-4 py-3 text-center">ระบบ</th><th class="px-4 py-3 text-center">นับจริง</th><th class="px-4 py-3 text-center">ผลต่าง</th></tr></thead>';
   html += '<tbody class="divide-y divide-gray-100">';
   _itemsData.forEach(function(item) {
     html += '<tr data-st-id="' + item.id + '"><td class="px-4 py-3"><p class="font-medium text-gray-800">' + escHtml(item.name) + '</p><p class="text-xs text-gray-500">' + escHtml(item.item_code) + ' • ' + escHtml(item.unit) + '</p></td>';
@@ -2526,7 +2547,7 @@ function renderReports() {
       lsHtml = '<p class="text-center text-sm text-gray-400 py-4">ไม่มีรายการวัสดุที่ต้องเติม</p>';
     } else {
       lsHtml = '<div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600">';
-      lsHtml += '<tr><th class="px-4 py-2 text-left">รหัส</th><th class="px-4 py-2 text-left">ชื่อวัสดุ</th><th class="px-4 py-2 text-center">คงเหลือ</th><th class="px-4 py-2 text-center">ขั้นต่ำ</th><th class="px-4 py-2 text-center">สถานะ</th></tr>';
+      lsHtml += '<tr><th class="px-4 py-2 text-left">เลขไอเท็ม</th><th class="px-4 py-2 text-left">ชื่อวัสดุ</th><th class="px-4 py-2 text-center">คงเหลือ</th><th class="px-4 py-2 text-center">ขั้นต่ำ</th><th class="px-4 py-2 text-center">สถานะ</th></tr>';
       lsHtml += '</thead><tbody class="divide-y divide-gray-100">';
       lowItems.forEach(function(i) {
         var sc = getStockClass(i.current_stock, i.min_stock);
@@ -2749,7 +2770,7 @@ function exportLowStock() {
     hideLoading();
     if (!res.success) { showError(res.message); return; }
     var items = (res.data || []).filter(function(i) { return i.active !== false && i.current_stock <= i.min_stock; });
-    var headers = [{ key: 'item_code', title: 'รหัส' }, { key: 'name', title: 'ชื่อวัสดุ' }, { key: 'category', title: 'หมวดหมู่' }, { key: 'current_stock', title: 'คงเหลือ' }, { key: 'min_stock', title: 'ขั้นต่ำ' }, { key: 'unit', title: 'หน่วย' }];
+    var headers = [{ key: 'item_code', title: 'เลขไอเท็ม' }, { key: 'name', title: 'ชื่อวัสดุ' }, { key: 'category', title: 'หมวดหมู่' }, { key: 'current_stock', title: 'คงเหลือ' }, { key: 'min_stock', title: 'ขั้นต่ำ' }, { key: 'unit', title: 'หน่วย' }];
     var rows = items.map(function(i) { return { item_code: i.item_code || '', name: i.name || '', category: i.category || '', current_stock: i.current_stock || 0, min_stock: i.min_stock || 0, unit: i.unit || '' }; });
     downloadXlsx(rows, headers, 'รายงานสต็อกต่ำ');
   }).catch(function() { hideLoading(); showError('Export ไม่สำเร็จ'); });
@@ -3157,7 +3178,7 @@ function openWithdrawBatchModal(itemId, viaQr) {
     body += '<label class="form-label">ค้นหารายการวัสดุ</label>';
     body += '<div class="relative">';
     body += '<i class="fi fi-rr-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>';
-    body += '<input type="text" id="wdDraftSearch" oninput="wdDraftRenderCatalog()" placeholder="พิมพ์ชื่อวัสดุหรือรหัส..." class="form-input pl-9">';
+    body += '<input type="text" id="wdDraftSearch" oninput="wdDraftRenderCatalog()" placeholder="พิมพ์ชื่อวัสดุหรือเลขไอเท็ม..." class="form-input pl-9">';
     body += '</div>';
     body += '</div>';
     body += '</div>';
