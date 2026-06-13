@@ -129,6 +129,15 @@ function callUploadViaIframe(url, fnName, args) {
   });
 }
 
+function isSameOriginUrl(url) {
+  if (typeof window === 'undefined' || !window.location || !url) return false;
+  try {
+    return new URL(url, window.location.href).origin === window.location.origin;
+  } catch (e) {
+    return false;
+  }
+}
+
 function callAPI(fnName) {
   var args = Array.prototype.slice.call(arguments, 1);
   var baseUrl = getApiBaseUrl();
@@ -139,7 +148,9 @@ function callAPI(fnName) {
   
   // uploadFile ใช้ POST เพราะ base64 ใหญ่เกิน URL length limit
   if (fnName === 'uploadFile') {
-    if (bridgeMode) return callUploadViaIframe(APPS_SCRIPT_URL, fnName, args);
+    if (bridgeMode || !isSameOriginUrl(baseUrl || APPS_SCRIPT_URL)) {
+      return callUploadViaIframe(baseUrl || APPS_SCRIPT_URL, fnName, args);
+    }
     return fetch(baseUrl || APPS_SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
