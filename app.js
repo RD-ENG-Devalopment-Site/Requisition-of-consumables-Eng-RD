@@ -1604,14 +1604,14 @@ function buildStockContent(data) {
     data.forEach(function(item) {
       var sClass = getStockClass(item.current_stock, item.min_stock);
       var sLabel = getStockLabel(item.current_stock, item.min_stock);
-      var lowBadge = isLowStockItem(item) ? '<span class="absolute -top-2 -right-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold shadow-sm ' + sClass + '"><i class="fi fi-rr-triangle-warning"></i>' + sLabel + '</span>' : '';
+      var lowBadge = isLowStockItem(item) ? '<span class="absolute top-3 right-3 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold shadow-sm ' + sClass + '"><i class="fi fi-rr-triangle-warning"></i>' + sLabel + '</span>' : '';
       var pct = item.min_stock > 0 ? Math.min(100, Math.round(item.current_stock / (item.min_stock * 3) * 100)) : 50;
       var barColor = item.current_stock <= 0 ? 'bg-red-500' : item.current_stock <= item.min_stock ? 'bg-amber-400' : 'bg-green-500';
-      html += '<div class="card p-4 flex flex-col gap-3 hover:shadow-md transition-shadow">';
-      html += '<div class="flex items-start justify-between">';
+      html += '<div class="card p-4 flex flex-col gap-3 hover:shadow-md transition-shadow relative">';
+      html += '<div class="flex items-start justify-start pr-16">';
       var imgUrlSrc = imgUrl(item.image_file_id);
       var cardImg = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-10 h-10 object-cover rounded-xl border border-gray-200" loading="lazy">' : '<div class="w-10 h-10 bg-navy-100 rounded-xl flex items-center justify-center"><i class="fi fi-rr-box-open-full text-navy-700 text-lg"></i></div>';
-      html += '<div class="relative">' + cardImg + lowBadge + '</div></div>';
+      html += '<div>' + cardImg + '</div>' + lowBadge + '</div>';
       html += '<div><p class="font-semibold text-gray-800 text-sm leading-snug">' + escHtml(item.name) + '</p>';
       html += '<p class="text-xs text-gray-400 mt-0.5">' + escHtml(item.size || '') + ' • ' + escHtml(item.category || '') + '</p>';
       html += '<p class="text-xs text-gray-500 mt-0.5">' + escHtml(getItemTypeLabel(getResolvedItemType(item))) + ' • ' + escHtml(getMachineUsageText(item)) + '</p></div>';
