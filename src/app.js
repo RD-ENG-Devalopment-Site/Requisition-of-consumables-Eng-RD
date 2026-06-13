@@ -129,6 +129,28 @@ function imgUrl(fileId, size) {
   if (!fileId) return '';
   return getFileDataUrl(fileId) || '';
 }
+function applyAppBranding(cfg) {
+  var logoId = cfg && cfg.app_logo ? cfg.app_logo : '';
+  var logoUrl = logoId ? imgUrl(logoId) : '';
+  var loginIcon = document.getElementById('loginLogoIcon');
+  var loginImg = document.getElementById('loginLogoImg');
+  var sideIcon = document.getElementById('sidebarLogoIcon');
+  var sideImg = document.getElementById('sidebarLogoImg');
+  [loginImg, sideImg].forEach(function(img) {
+    if (!img) return;
+    if (logoUrl) {
+      img.src = logoUrl;
+      img.classList.remove('hidden');
+    } else {
+      img.removeAttribute('src');
+      img.classList.add('hidden');
+    }
+  });
+  [loginIcon, sideIcon].forEach(function(icon) {
+    if (!icon) return;
+    icon.classList.toggle('hidden', !!logoUrl);
+  });
+}
 
 // ===== PAGINATION =====
 function renderPagination(containerId, total, currentPage, onPageClick) {
@@ -688,6 +710,23 @@ function buildSettingsPage() {
   html += '<p class="text-xs text-gray-500 mt-1">ปรับชื่อระบบและค่าตั้งต้นที่ใช้ร่วมกันทุกหน้า</p></div>';
   html += '</div>';
   html += '<div class="card p-5 space-y-4">';
+  html += '<div class="space-y-3">';
+  html += '<label class="form-label">โลโก้ระบบ</label>';
+  html += '<input type="hidden" id="settingsAppLogoFileId" value="' + escHtml(cfg.app_logo || '') + '">';
+  html += '<div id="settingsLogoPreview" class="flex items-center gap-3">';
+  if (cfg.app_logo) {
+    var logoPreviewUrl = imgUrl(cfg.app_logo);
+    html += '<div class="w-16 h-16 rounded-2xl border border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center"><img src="' + escHtml(logoPreviewUrl) + '" class="w-full h-full object-contain"></div>';
+  } else {
+    html += '<div class="w-16 h-16 rounded-2xl border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center text-gray-300"><i class="fi fi-rr-box-alt text-2xl"></i></div>';
+  }
+  html += '<div class="flex flex-wrap gap-2">';
+  html += '<input id="settingsLogoInput" type="file" accept="image/*" class="hidden" onchange="uploadSettingsLogoFile(this)">';
+  html += '<button type="button" onclick="document.getElementById(\'settingsLogoInput\').click()" class="btn-secondary btn-sm"><i class="fi fi-rr-upload mr-1"></i>อัปโหลดโลโก้</button>';
+  html += '<button type="button" onclick="clearSettingsLogo()" class="btn-secondary btn-sm"><i class="fi fi-rr-cross-small mr-1"></i>ลบโลโก้</button>';
+  html += '</div></div>';
+  html += '<p class="text-xs text-gray-500">แนะนำไฟล์ PNG หรือ JPG พื้นหลังโปร่งใสจะดูดีที่สุด</p>';
+  html += '</div>';
   html += '<div><label class="form-label">ชื่อระบบ</label><input id="settingsAppName" class="form-input" value="' + escHtml(cfg.app_name || '') + '" placeholder="Requisition of consumables"></div>';
   html += '<div><label class="form-label">ชื่อหน่วยงาน</label><input id="settingsOrgName" class="form-input" value="' + escHtml(cfg.organization_name || '') + '" placeholder="RD"></div>';
   html += '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">';
@@ -745,6 +784,7 @@ function saveSettings() {
   var orgEmailEl = document.getElementById('settingsOrgEmail');
   var bridgeUrlEl = document.getElementById('settingsBridgeUrl');
   var gasEndpointEl = document.getElementById('settingsGasEndpoint');
+  var appLogoEl = document.getElementById('settingsAppLogoFileId');
   var payload = {
     app_name: appNameEl ? appNameEl.value.trim() : '',
     organization_name: orgNameEl ? orgNameEl.value.trim() : '',
@@ -759,7 +799,8 @@ function saveSettings() {
     notify_low_stock: !!(notifyLowStockEl && notifyLowStockEl.checked),
     notify_pending_approval: !!(notifyPendingEl && notifyPendingEl.checked),
     bridge_url: bridgeUrlEl ? bridgeUrlEl.value.trim() : '',
-    gas_endpoint: gasEndpointEl ? gasEndpointEl.value.trim() : ''
+    gas_endpoint: gasEndpointEl ? gasEndpointEl.value.trim() : '',
+    app_logo: appLogoEl ? appLogoEl.value.trim() : ''
   };
   if (!payload.app_name) { showError('กรุณาระบุชื่อระบบ'); return; }
   showLoading('กำลังบันทึกการตั้งค่า...');
@@ -771,8 +812,55 @@ function saveSettings() {
     var sideApp = document.getElementById('sidebarAppName');
     if (loginApp) loginApp.textContent = payload.app_name;
     if (sideApp) sideApp.textContent = payload.app_name;
+    applyAppBranding(payload);
     showSuccess(res.message || 'บันทึกการตั้งค่าเรียบร้อย');
   }).catch(function() { hideLoading(); showError('บันทึกการตั้งค่าไม่สำเร็จ'); });
+}
+
+function uploadSettingsLogoFile(input) {
+  var file = input && input.files ? input.files[0] : null;
+  if (!file) return;
+  if (!file.type || !file.type.match('image.*')) { showError('กรุณาเลือกไฟล์รูปภาพ'); input.value = ''; return; }
+  if (file.size > 5 * 1024 * 1024) { showError('ไฟล์ใหญ่เกิน 5MB'); input.value = ''; return; }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var base64 = String(e.target.result || '').split(',')[1];
+    if (!base64) { showError('อัปโหลดโลโก้ไม่สำเร็จ'); return; }
+    showLoading('กำลังอัปโหลดโลโก้...');
+    callAPI('uploadFile', AUTH.token, base64, file.type, file.name).then(function(res) {
+      hideLoading();
+      if (!res.success) { showError(res.message || 'อัปโหลดไม่สำเร็จ'); return; }
+      var logoIdEl = document.getElementById('settingsAppLogoFileId');
+      if (logoIdEl) logoIdEl.value = res.file_id || '';
+      var preview = document.getElementById('settingsLogoPreview');
+      if (preview) {
+        preview.innerHTML = '<div class="w-16 h-16 rounded-2xl border border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center"><img src="' + escHtml(imgUrl(res.file_id)) + '" class="w-full h-full object-contain"></div>'
+          + '<div class="flex flex-wrap gap-2">'
+          + '<input id="settingsLogoInput" type="file" accept="image/*" class="hidden" onchange="uploadSettingsLogoFile(this)">'
+          + '<button type="button" onclick="document.getElementById(\'settingsLogoInput\').click()" class="btn-secondary btn-sm"><i class="fi fi-rr-upload mr-1"></i>อัปโหลดโลโก้</button>'
+          + '<button type="button" onclick="clearSettingsLogo()" class="btn-secondary btn-sm"><i class="fi fi-rr-cross-small mr-1"></i>ลบโลโก้</button>'
+          + '</div>';
+      }
+      showSuccess('อัปโหลดโลโก้เรียบร้อย');
+    }).catch(function() { hideLoading(); showError('อัปโหลดโลโก้ไม่สำเร็จ'); });
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearSettingsLogo() {
+  var logoIdEl = document.getElementById('settingsAppLogoFileId');
+  var preview = document.getElementById('settingsLogoPreview');
+  var input = document.getElementById('settingsLogoInput');
+  if (logoIdEl) logoIdEl.value = '';
+  if (input) input.value = '';
+  if (preview) {
+    preview.innerHTML = '<div class="w-16 h-16 rounded-2xl border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center text-gray-300"><i class="fi fi-rr-box-alt text-2xl"></i></div>'
+      + '<div class="flex flex-wrap gap-2">'
+      + '<input id="settingsLogoInput" type="file" accept="image/*" class="hidden" onchange="uploadSettingsLogoFile(this)">'
+      + '<button type="button" onclick="document.getElementById(\'settingsLogoInput\').click()" class="btn-secondary btn-sm"><i class="fi fi-rr-upload mr-1"></i>อัปโหลดโลโก้</button>'
+      + '<button type="button" onclick="clearSettingsLogo()" class="btn-secondary btn-sm"><i class="fi fi-rr-cross-small mr-1"></i>ลบโลโก้</button>'
+      + '</div>';
+  }
 }
 
 // ===== ITEMS =====
@@ -3446,13 +3534,14 @@ window.onload = function() {
   _QR_ITEM_ID = urlParams.get('item_id') || '';
 
   // ตรวจสอบเซสชันผู้ใช้และเริ่มต้นแอปตามปกติ (ตัดส่วน Public Asset ออก)
-callAPI('getConfig').then(function(res) {
+  callAPI('getConfig').then(function(res) {
     if (res && res.success && res.data) {
       var cfg = res.data;
       var loginApp = document.getElementById('loginAppName');
       var sideApp = document.getElementById('sidebarAppName');
       if (loginApp && cfg.app_name) loginApp.textContent = cfg.app_name;
       if (sideApp && cfg.app_name) sideApp.textContent = cfg.app_name;
+      applyAppBranding(cfg);
     }
   }).catch(function(err) {
     console.warn('โหลด config ไม่สำเร็จ:', err);
