@@ -256,10 +256,12 @@ function showMainShell() {
   _setElementDisplay('menuStocktake', notEmp ? '' : 'none');
   _setElementDisplay('menuPrintQR', notEmp ? '' : 'none');
   _setElementDisplay('menuInventorySection', notEmp ? '' : 'none');
-  _setElementDisplay('menuApprove', isAdmin ? '' : 'none');
-  _setElementDisplay('menuAdminSection', isAdmin ? '' : 'none');
-  _setElementDisplay('menuReportLabel', notEmp ? '' : 'none');
-  _setElementDisplay('menuReportSection', notEmp ? '' : 'none');
+  _setElementDisplay('menuApprove', isAdmin ? '' : 'none');
+  _setElementDisplay('menuAdminSection', isAdmin ? '' : 'none');
+  _setElementDisplay('menuReportLabel', '');
+  _setElementDisplay('menuReportSection', '');
+  _setElementDisplay('menuReportAdminItems', isAdmin ? '' : 'none');
+  _setElementDisplay('menuReportUserItems', isAdmin ? 'none' : '');
   
   initMenuSections();
   updateClock();
@@ -281,12 +283,14 @@ function loadPage(page) {
   });
   expandActiveMenuSection(page);
   
-  var titles = {
-    dashboard: 'ภาพรายงานระบบ', stock: 'สต็อกคงเหลือ', items: 'รายการวัสดุ',
-    receive: 'รับวัสดุเข้าคลัง', stocktake: 'นับสต็อก', printqr: 'พิมพ์ QR สติ๊กเกอร์', withdraw: 'เบิกวัสดุ', approve: 'อนุมัติการเบิก',
-    transactions: 'ประวัติเคลื่อนไหว', reports: 'รายงาน',
-    users: 'จัดการผู้ใช้งาน', settings: 'ตั้งค่าระบบ', profile: 'โปรไฟล์',
-  };
+  var titles = {
+    dashboard: 'ภาพรายงานระบบ', stock: 'สต็อกคงเหลือ', items: 'รายการวัสดุ',
+    receive: 'รับวัสดุเข้าคลัง', stocktake: 'นับสต็อก', printqr: 'พิมพ์ QR สติ๊กเกอร์', withdraw: 'เบิกวัสดุ', approve: 'อนุมัติการเบิก',
+    transactions: 'ประวัติเคลื่อนไหว', reports: 'รายงาน',
+    report_low_stock: 'แจ้งเตือนสต็อกต่ำ', report_edit_history: 'ประวัติการแก้ไขรายการ', report_machine_mgmt: 'จัดการเครื่องจักร/หมวดเครื่องจักร',
+    report_my_pending: 'รายการที่กำลังรออนุมัติของตัวเอง', report_my_transactions: 'ประวัติการเคลื่อนไหวของตัวเอง', report_my_notifications: 'แจ้งเตือนของตัวเอง',
+    users: 'จัดการผู้ใช้งาน', settings: 'ตั้งค่าระบบ', profile: 'โปรไฟล์',
+  };
   
   var pageTitleEl = document.getElementById('pageTitle');
   if (pageTitleEl) pageTitleEl.textContent = titles[page] || page;
@@ -312,9 +316,15 @@ function loadPage(page) {
   else if (page === 'withdraw')  renderWithdraw();
   else if (page === 'approve')   renderApprove();
   else if (page === 'transactions') renderTransactions();
-  else if (page === 'reports')   renderReports();
-  else if (page === 'users')     renderUsers();
-  else if (page === 'settings')   renderSettings();
+  else if (page === 'reports')   renderReports();
+  else if (page === 'report_low_stock') renderReportLowStock();
+  else if (page === 'report_edit_history') renderReportEditHistory();
+  else if (page === 'report_machine_mgmt') renderReportMachineMgmt();
+  else if (page === 'report_my_pending') renderReportMyPending();
+  else if (page === 'report_my_transactions') renderReportMyTransactions();
+  else if (page === 'report_my_notifications') renderReportMyNotifications();
+  else if (page === 'users')     renderUsers();
+  else if (page === 'settings')   renderSettings();
   else if (page === 'profile')   renderProfile();
 }
 
@@ -348,7 +358,9 @@ function expandActiveMenuSection(page) {
     dashboard: 'main', stock: 'main',
     items: 'inventory', receive: 'inventory', stocktake: 'inventory', printqr: 'inventory',
     withdraw: 'withdraw', approve: 'withdraw', transactions: 'withdraw',
-    reports: 'report', users: 'admin', settings: 'admin', profile: 'main'
+    reports: 'report', report_low_stock: 'report', report_edit_history: 'report', report_machine_mgmt: 'report',
+    report_my_pending: 'report', report_my_transactions: 'report', report_my_notifications: 'report',
+    users: 'admin', settings: 'admin', profile: 'main'
   };
   var section = map[page];
   if (!section) return;
@@ -2730,7 +2742,168 @@ function renderReports() {
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { font: { family: 'Sarabun', size: 11 }, boxWidth: 12 } } }, scales: { y: { ticks: { font: { family: 'Sarabun', size: 11 } }, grid: { color: '#f3f4f6' } }, x: { ticks: { font: { family: 'Sarabun', size: 11 } }, grid: { display: false } } } }
       });
     }
-  }).catch(function(err) { console.error(err); });
+  }).catch(function(err) { console.error(err); });
+}
+
+function renderReportShell(title, subtitle, bodyHtml) {
+  var html = '<div class="fade-in space-y-4">';
+  html += '<div class="flex items-center justify-between flex-wrap gap-3">';
+  html += '<div><h3 class="font-semibold text-gray-800 text-lg">' + escHtml(title) + '</h3>';
+  html += '<p class="text-xs text-gray-500 mt-1">' + escHtml(subtitle || '') + '</p></div>';
+  html += '<button onclick="loadPage(\'reports\')" class="btn-secondary btn-sm"><i class="fi fi-rr-arrow-left mr-1"></i>กลับหน้ารายงาน</button>';
+  html += '</div>';
+  html += bodyHtml || '';
+  html += '</div>';
+  var contentEl = document.getElementById('mainContent');
+  if (contentEl) contentEl.innerHTML = html;
+}
+
+function renderReportLowStock() {
+  showLoading('โหลดรายงาน...');
+  Promise.all([callAPI('getDashboardStats', AUTH.token), callAPI('getItems', AUTH.token)]).then(function(results) {
+    hideLoading();
+    var stats = results[0] || {};
+    var items = (results[1] && results[1].data) || [];
+    var low = (stats.low_stock_items || items.filter(function(i) { return i.current_stock <= (i.min_stock || 5); }))
+      .slice()
+      .sort(function(a,b){ return (a.current_stock || 0) - (b.current_stock || 0); });
+    var html = '<div class="card overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-sm">';
+    html += '<thead class="bg-gray-50 text-xs text-gray-600"><tr><th class="px-4 py-3 text-left">เลขไอเท็ม</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">ประเภท</th><th class="px-4 py-3 text-left">หมวด</th><th class="px-4 py-3 text-center">คงเหลือ</th><th class="px-4 py-3 text-center">ขั้นต่ำ</th></tr></thead><tbody class="divide-y divide-gray-100">';
+    if (!low.length) html += '<tr><td colspan="6" class="text-center py-10 text-gray-400">ไม่มีรายการใกล้หมด</td></tr>';
+    low.forEach(function(i) {
+      html += '<tr><td class="px-4 py-2.5 font-mono text-xs text-navy-700">' + escHtml(i.item_code || '-') + '</td>';
+      html += '<td class="px-4 py-2.5 font-medium text-gray-700">' + escHtml(i.name || '-') + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs">' + escHtml(getItemTypeLabel(getResolvedItemType(i))) + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(i.category || '-') + '</td>';
+      html += '<td class="px-4 py-2.5 text-center font-bold">' + (i.current_stock || 0) + ' ' + escHtml(i.unit || '') + '</td>';
+      html += '<td class="px-4 py-2.5 text-center text-gray-500">' + (i.min_stock || '-') + '</td></tr>';
+    });
+    html += '</tbody></table></div></div>';
+    renderReportShell('แจ้งเตือนสต็อกต่ำ', 'รายการที่ควรเติมสต็อกก่อนกระทบงาน', html);
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function renderReportEditHistory() {
+  showLoading('โหลดรายงาน...');
+  callAPI('getAuditLogs', AUTH.token, { module: 'items' }).then(function(res) {
+    hideLoading();
+    var data = res.data || [];
+    var html = '<div class="card overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-sm">';
+    html += '<thead class="bg-gray-50 text-xs text-gray-600"><tr><th class="px-4 py-3 text-left">เวลา</th><th class="px-4 py-3 text-left">การทำรายการ</th><th class="px-4 py-3 text-left">รายละเอียด</th><th class="px-4 py-3 text-left">ผู้ทำรายการ</th></tr></thead><tbody class="divide-y divide-gray-100">';
+    if (!data.length) html += '<tr><td colspan="4" class="text-center py-10 text-gray-400">ยังไม่มีประวัติการแก้ไขรายการ</td></tr>';
+    data.slice(0, 100).forEach(function(l) {
+      html += '<tr><td class="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">' + formatDateTime(l.created_at) + '</td>';
+      html += '<td class="px-4 py-2.5 font-medium text-gray-700">' + escHtml(l.action || '-') + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(l.detail || '-') + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(l.actor_name || '-') + '</td></tr>';
+    });
+    html += '</tbody></table></div></div>';
+    renderReportShell('ประวัติการแก้ไขรายการ', 'ประวัติการเพิ่ม แก้ไข และลบรายการวัสดุ', html);
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function renderReportMachineMgmt() {
+  showLoading('โหลดรายงาน...');
+  callAPI('getItems', AUTH.token).then(function(res) {
+    hideLoading();
+    var items = res.data || [];
+    var machineMap = {};
+    items.forEach(function(i) {
+      var machines = splitMachineList(i.machine_name).concat(splitMachineList(i.compatible_machines));
+      machines.forEach(function(m) {
+        if (!m) return;
+        if (!machineMap[m]) machineMap[m] = { count: 0, items: [] };
+        machineMap[m].count += 1;
+        if (machineMap[m].items.indexOf(i.name) === -1) machineMap[m].items.push(i.name);
+      });
+    });
+    var keys = Object.keys(machineMap).sort();
+    var html = '<div class="card overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-sm">';
+    html += '<thead class="bg-gray-50 text-xs text-gray-600"><tr><th class="px-4 py-3 text-left">เครื่องจักร</th><th class="px-4 py-3 text-center">จำนวนวัสดุ</th><th class="px-4 py-3 text-left">รายการที่ใช้ร่วม</th></tr></thead><tbody class="divide-y divide-gray-100">';
+    if (!keys.length) html += '<tr><td colspan="3" class="text-center py-10 text-gray-400">ยังไม่มีข้อมูลเครื่องจักร</td></tr>';
+    keys.forEach(function(name) {
+      html += '<tr><td class="px-4 py-2.5 font-medium text-gray-700">' + escHtml(name) + '</td>';
+      html += '<td class="px-4 py-2.5 text-center font-bold text-navy-700">' + machineMap[name].count + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(machineMap[name].items.join(', ')) + '</td></tr>';
+    });
+    html += '</tbody></table></div></div>';
+    renderReportShell('จัดการเครื่องจักร/หมวดเครื่องจักร', 'สรุปเครื่องจักรที่ผูกกับวัสดุ และรายการที่ใช้ร่วมกัน', html);
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function renderReportMyPending() {
+  showLoading('โหลดรายงาน...');
+  callAPI('getWithdrawals', AUTH.token, { status: 'all' }).then(function(res) {
+    hideLoading();
+    var data = (res.data || []).filter(function(w) { return w.requested_by === AUTH.user.id && w.status === 'pending'; });
+    var html = '<div class="card overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-sm">';
+    html += '<thead class="bg-gray-50 text-xs text-gray-600"><tr><th class="px-4 py-3 text-left">เลขที่</th><th class="px-4 py-3 text-left">วันที่</th><th class="px-4 py-3 text-left">รายการ</th><th class="px-4 py-3 text-center">จำนวน</th><th class="px-4 py-3 text-left">เหตุผล</th><th class="px-4 py-3 text-center">สถานะ</th></tr></thead><tbody class="divide-y divide-gray-100">';
+    if (!data.length) html += '<tr><td colspan="6" class="text-center py-10 text-gray-400">ไม่มีรายการรออนุมัติของคุณ</td></tr>';
+    data.forEach(function(w) {
+      html += '<tr><td class="px-4 py-2.5 font-mono text-xs text-navy-700">' + escHtml(w.withdraw_no || '-') + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + formatDate(w.requested_at || w.date) + '</td>';
+      html += '<td class="px-4 py-2.5 text-gray-700">' + escHtml(w.item_name || '-') + '</td>';
+      html += '<td class="px-4 py-2.5 text-center font-bold">' + w.quantity_requested + ' ' + escHtml(w.unit || '') + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(getWithdrawReasonLabel(w.purpose)) + '</td>';
+      html += '<td class="px-4 py-2.5 text-center"><span class="badge-pending px-2 py-0.5 rounded-full text-xs">รออนุมัติ</span></td></tr>';
+    });
+    html += '</tbody></table></div></div>';
+    renderReportShell('รายการที่กำลังรออนุมัติของตัวเอง', 'ติดตามคำขอเบิกของคุณแบบเรียลไทม์', html);
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function renderReportMyTransactions() {
+  showLoading('โหลดรายงาน...');
+  callAPI('getTransactions', AUTH.token, {}).then(function(res) {
+    hideLoading();
+    var data = res.data || [];
+    var html = '<div class="card overflow-hidden"><div class="overflow-x-auto"><table class="w-full text-sm">';
+    html += '<thead class="bg-gray-50 text-xs text-gray-600"><tr><th class="px-4 py-3 text-left">วันที่</th><th class="px-4 py-3 text-left">ประเภท</th><th class="px-4 py-3 text-left">รายการ</th><th class="px-4 py-3 text-center">จำนวน</th><th class="px-4 py-3 text-left">หมายเหตุ</th></tr></thead><tbody class="divide-y divide-gray-100">';
+    if (!data.length) html += '<tr><td colspan="5" class="text-center py-10 text-gray-400">ไม่มีประวัติการเคลื่อนไหว</td></tr>';
+    data.slice(0, 100).forEach(function(t) {
+      var isR = t.type === 'receive';
+      html += '<tr><td class="px-4 py-2.5 text-xs text-gray-500">' + formatDate(t.date) + '</td>';
+      html += '<td class="px-4 py-2.5"><span class="px-2 py-0.5 rounded-full text-xs ' + (isR ? 'badge-receive' : 'badge-withdraw') + '">' + (isR ? 'รับเข้า' : 'เบิกออก') + '</span></td>';
+      html += '<td class="px-4 py-2.5 text-gray-700">' + escHtml(t.item_name || '-') + '</td>';
+      html += '<td class="px-4 py-2.5 text-center font-bold ' + (isR ? 'text-blue-700' : 'text-purple-700') + '">' + (isR ? '+' : '-') + t.quantity + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(t.note || '-') + '</td></tr>';
+    });
+    html += '</tbody></table></div></div>';
+    renderReportShell('ประวัติการเคลื่อนไหวของตัวเอง', 'รายการเคลื่อนไหวเฉพาะบัญชีของคุณ', html);
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
+}
+
+function renderReportMyNotifications() {
+  showLoading('โหลดรายงาน...');
+  Promise.all([callAPI('getConfig', AUTH.token), callAPI('getDashboardStats', AUTH.token)]).then(function(results) {
+    hideLoading();
+    var cfg = (results[0] && results[0].data) || {};
+    var stats = results[1] || {};
+    var lowItems = stats.low_stock_items || [];
+    var html = '<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">';
+    html += '<div class="card p-4 space-y-3"><h4 class="font-semibold text-gray-800">ช่องทางแจ้งเตือน</h4>';
+    html += '<p class="text-sm text-gray-600">Telegram: ' + (cfg.telegram_enabled ? 'เปิด' : 'ปิด') + '</p>';
+    html += '<p class="text-sm text-gray-600">LINE: ' + (cfg.line_enabled ? 'เปิด' : 'ปิด') + '</p>';
+    html += '<p class="text-sm text-gray-600">อีเมลระบบ: ' + escHtml(cfg.organization_email || '-') + '</p>';
+    html += '<p class="text-sm text-gray-600">ผู้รับแจ้งเตือน: ' + escHtml(cfg.notification_recipients || '-') + '</p>';
+    html += '</div>';
+    html += '<div class="card p-4 space-y-3"><h4 class="font-semibold text-gray-800">สรุปการแจ้งเตือน</h4>';
+    html += '<p class="text-sm text-gray-600">เมื่อใกล้หมด: ' + (cfg.notify_low_stock ? 'เปิด' : 'ปิด') + '</p>';
+    html += '<p class="text-sm text-gray-600">เมื่อมีคำขอรออนุมัติ: ' + (cfg.notify_pending_approval ? 'เปิด' : 'ปิด') + '</p>';
+    html += '<p class="text-sm text-gray-600 break-all">Bridge URL: ' + escHtml(cfg.bridge_url || '-') + '</p>';
+    html += '<p class="text-sm text-gray-600 break-all">GAS Endpoint: ' + escHtml(cfg.gas_endpoint || '-') + '</p>';
+    html += '</div></div>';
+    html += '<div class="card overflow-hidden mt-4"><div class="card-header"><h3 class="font-semibold text-gray-700 text-sm">รายการใกล้หมดที่ควรระวัง</h3></div>';
+    html += '<div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-gray-50 text-xs text-gray-600"><tr><th class="px-4 py-3 text-left">รายการ</th><th class="px-4 py-3 text-left">ประเภท</th><th class="px-4 py-3 text-center">คงเหลือ</th></tr></thead><tbody class="divide-y divide-gray-100">';
+    if (!lowItems.length) html += '<tr><td colspan="3" class="text-center py-10 text-gray-400">ตอนนี้ไม่มีการแจ้งเตือนสต็อกต่ำ</td></tr>';
+    lowItems.slice(0, 10).forEach(function(i) {
+      html += '<tr><td class="px-4 py-2.5 text-gray-700">' + escHtml(i.name || '-') + '</td>';
+      html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(getItemTypeLabel(getResolvedItemType(i))) + '</td>';
+      html += '<td class="px-4 py-2.5 text-center font-bold">' + (i.current_stock || 0) + ' ' + escHtml(i.unit || '') + '</td></tr>';
+    });
+    html += '</tbody></table></div></div>';
+    renderReportShell('แจ้งเตือนของตัวเอง', 'ภาพรวมการแจ้งเตือนและสิ่งที่ควรติดตาม', html);
+  }).catch(function() { hideLoading(); showError('โหลดข้อมูลไม่สำเร็จ'); });
 }
 
 function loadReceiveReport() {

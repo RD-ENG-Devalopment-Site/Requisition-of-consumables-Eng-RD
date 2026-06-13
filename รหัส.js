@@ -82,6 +82,7 @@ function doGet(e) {
         case 'cancelWithdrawal':    result = cancelWithdrawal(args[0], args[1]); break;
         case 'getTransactions':     result = getTransactions(args[0], args[1]); break;
         case 'getDashboardStats':   result = getDashboardStats(args[0]); break;
+        case 'getAuditLogs':        result = getAuditLogs(args[0], args[1]); break;
         case 'getUsers':            result = getUsers(args[0]); break;
         case 'addUser':             result = addUser(args[0], args[1]); break;
         case 'updateUser':          result = updateUser(args[0], args[1], args[2]); break;
@@ -205,6 +206,7 @@ function initializeSheets() {
     'Receives':     'receive_json',
     'Withdrawals':  'withdrawal_json',
     'Transactions': 'transaction_json',
+    'AuditLogs':    'audit_json',
     'Errors':       'error_json'
   };
 
@@ -228,8 +230,27 @@ function initializeSheets() {
       telegram_bot_token: '',
       telegram_chat_id: '',
       telegram_enabled: false,
+      line_enabled: false,
+      line_token: '',
+      notification_recipients: '',
+      notify_low_stock: true,
+      notify_pending_approval: true,
+      bridge_url: '',
+      gas_endpoint: '',
       low_stock_threshold: CONFIG.LOW_STOCK_DEFAULT,
       app_version: CONFIG.APP_VERSION
+    });
+  }
+
+  if (getSheetData('AuditLogs').length === 0) {
+    saveToSheet('AuditLogs', {
+      id: Utilities.getUuid(),
+      action: 'init',
+      module: 'system',
+      detail: 'เริ่มต้นระบบ',
+      actor_id: '',
+      actor_name: 'system',
+      created_at: new Date().toISOString()
     });
   }
 
@@ -446,6 +467,7 @@ function addItem(token, itemData) {
       active: true
     };
     saveToSheet('Items', newItem);
+    logAudit(token, 'add_item', 'items', 'เพิ่มรายการ ' + newItem.name + ' (' + newItem.item_code + ')');
     return { success: true, data: newItem, message: 'เพิ่มรายการวัสดุเรียบร้อย' };
   } catch(err) {
     logError('addItem', err);
@@ -502,6 +524,7 @@ function updateItem(token, itemId, itemData) {
 
     var updated = updateInSheet('Items', itemId, updatePayload);
     if (!updated) return { success: false, message: 'ไม่พบรายการที่ต้องการแก้ไขในฐานข้อมูล' };
+    logAudit(token, 'update_item', 'items', 'แก้ไขรายการ ' + (itemData.name || itemId));
     return { success: true, message: 'แก้ไขข้อมูลวัสดุเรียบร้อยแล้ว' };
   } catch(err) {
     logError('updateItem', err);
@@ -514,6 +537,7 @@ function deleteItem(token, itemId) {
     var session = validateSession(token);
     if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์ดำเนินการ' };
     updateInSheet('Items', itemId, { active: false });
+    logAudit(token, 'delete_item', 'items', 'ลบ/ปิดใช้งานรายการ ' + itemId);
     return { success: true, message: 'ลบรายการเรียบร้อย' };
   } catch(err) { return { success: false, message: err.message }; }
 }
@@ -1085,6 +1109,7 @@ function saveConfig(token, configData) {
     } else {
       saveToSheet('Config', merged);
     }
+    logAudit(token, 'save_config', 'config', 'บันทึกการตั้งค่าระบบ');
     return { success: true, message: 'บันทึกการตั้งค่าเรียบร้อย' };
   } catch(err) { return { success: false, message: err.message }; }
 }
@@ -1371,6 +1396,36 @@ function logError(fnName, err) {
     sheet.appendRow([JSON.stringify(data)]);
     console.error('[' + fnName + ']', err);
   } catch(e){}
+}
+
+function logAudit(token, action, moduleName, detail) {
+  try {
+    var session = token ? validateSession(token) : null;
+    var actorId = session ? session.user_id : '';
+    var actorName = session ? session.name : 'system';
+    saveToSheet('AuditLogs', {
+      id: Utilities.getUuid(),
+      action: action,
+      module: moduleName || '',
+      detail: detail || '',
+      actor_id: actorId,
+      actor_name: actorName,
+      created_at: new Date().toISOString()
+    });
+  } catch(e){}
+}
+
+function getAuditLogs(token, filters) {
+  try {
+    var session = validateSession(token);
+    if (!session || session.role !== 'admin') return { success: false, message: 'ไม่มีสิทธิ์' };
+    var logs = getSheetData('AuditLogs');
+    if (filters && filters.module) {
+      logs = logs.filter(function(l) { return l.module === filters.module; });
+    }
+    logs = logs.sort(function(a,b){ return b.created_at > a.created_at ? 1 : -1; });
+    return { success: true, data: logs };
+  } catch(err) { return { success: false, message: err.message }; }
 }
 
 // ===== MULTI-ITEM WITHDRAW OVERRIDE =====

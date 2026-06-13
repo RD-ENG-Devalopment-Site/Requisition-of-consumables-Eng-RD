@@ -100,6 +100,9 @@
       { id:'t2', type:'withdraw', item_id:'i5', item_name:'หมึกพิมพ์ HP 205A Black', quantity:2, date:'2025-05-12', note:'อนุมัติแล้ว', user_name:'พนักงานตัวอย่าง', created_at:'2025-05-12T10:00:00Z' }
     ];
     _set('transactions', tx);
+    _set('audit_logs', [
+      { id:'a1', action:'init', module:'system', detail:'เริ่มต้นระบบ', actor_id:'', actor_name:'system', created_at:_now() }
+    ]);
 
     _set('seeded', true);
   }
@@ -208,6 +211,9 @@
       data.id = _nextId(); data.active = true; data.current_stock = data.current_stock || 0;
       items.push(data);
       _set('items', items);
+      var auditsA = _get('audit_logs') || [];
+      auditsA.push({ id:_nextId(), action:'add_item', module:'items', detail:'เพิ่มรายการ ' + data.name, actor_id:_auth(token) ? _auth(token).id : '', actor_name:_auth(token) ? _auth(token).name : 'system', created_at:_now() });
+      _set('audit_logs', auditsA);
       _addTx('receive', data.id, data.name, data.current_stock || 0, _today(), 'เพิ่มรายการใหม่', _auth(token).name);
       return { success:true, message:'เพิ่มรายการสำเร็จ' };
     },
@@ -217,6 +223,9 @@
       if (idx === -1) return { success:false, message:'ไม่พบรายการ' };
       Object.keys(data).forEach(function(k){ items[idx][k] = data[k]; });
       _set('items', items);
+      var auditsU = _get('audit_logs') || [];
+      auditsU.push({ id:_nextId(), action:'update_item', module:'items', detail:'แก้ไขรายการ ' + (data.name || id), actor_id:_auth(token) ? _auth(token).id : '', actor_name:_auth(token) ? _auth(token).name : 'system', created_at:_now() });
+      _set('audit_logs', auditsU);
       return { success:true, message:'บันทึกสำเร็จ' };
     },
     deleteItem: function(token, id) {
@@ -225,6 +234,9 @@
       if (idx === -1) return { success:false, message:'ไม่พบรายการ' };
       items[idx].active = false;
       _set('items', items);
+      var auditsD = _get('audit_logs') || [];
+      auditsD.push({ id:_nextId(), action:'delete_item', module:'items', detail:'ลบ/ปิดใช้งานรายการ ' + id, actor_id:_auth(token) ? _auth(token).id : '', actor_name:_auth(token) ? _auth(token).name : 'system', created_at:_now() });
+      _set('audit_logs', auditsD);
       return { success:true, message:'ลบรายการสำเร็จ' };
     },
     uploadFile: function(token, base64, mimeType, fileName) {
@@ -359,7 +371,16 @@
       Object.keys(current).forEach(function(k){ merged[k] = current[k]; });
       Object.keys(data || {}).forEach(function(k){ if (typeof data[k] !== 'undefined') merged[k] = data[k]; });
       _set('config', merged);
+      var auditsC = _get('audit_logs') || [];
+      auditsC.push({ id:_nextId(), action:'save_config', module:'config', detail:'บันทึกการตั้งค่าระบบ', actor_id:_auth(token) ? _auth(token).id : '', actor_name:_auth(token) ? _auth(token).name : 'system', created_at:_now() });
+      _set('audit_logs', auditsC);
       return { success:true, message:'บันทึกการตั้งค่าสำเร็จ' };
+    },
+    getAuditLogs: function(token, filters) {
+      var logs = _get('audit_logs') || [];
+      if (filters && filters.module) logs = logs.filter(function(l){ return l.module === filters.module; });
+      logs = logs.slice().sort(function(a,b){ return b.created_at > a.created_at ? 1 : -1; });
+      return { success:true, data: logs };
     },
     testTelegram: function(token) {
       return { success:true, message:'ส่งข้อความ Test สำเร็จ (Mock)' };

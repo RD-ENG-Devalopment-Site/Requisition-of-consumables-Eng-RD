@@ -159,10 +159,44 @@
           <i class="fi fi-rr-angle-down menu-group-chevron transition-transform duration-200 text-blue-400"></i>
         </button>
         <div class="menu-group-body">
-          <ul class="space-y-0.5 mb-3" id="menuReportSection">
+          <ul class="space-y-0.5 mb-2" id="menuReportSection">
             <li>
               <button onclick="loadPage('reports')" data-page="reports" class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
                 <i class="fi fi-rr-chart-histogram w-4 text-center text-base"></i><span>รายงาน</span>
+              </button>
+            </li>
+          </ul>
+          <ul class="space-y-0.5 mb-2" id="menuReportAdminItems">
+            <li>
+              <button onclick="loadPage('report_low_stock')" data-page="report_low_stock" class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-triangle-warning w-4 text-center text-base"></i><span>แจ้งเตือนสต็อกต่ำ</span>
+              </button>
+            </li>
+            <li>
+              <button onclick="loadPage('report_edit_history')" data-page="report_edit_history" class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-edit w-4 text-center text-base"></i><span>ประวัติการแก้ไขรายการ</span>
+              </button>
+            </li>
+            <li>
+              <button onclick="loadPage('report_machine_mgmt')" data-page="report_machine_mgmt" class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-settings w-4 text-center text-base"></i><span>จัดการเครื่องจักร/หมวดเครื่องจักร</span>
+              </button>
+            </li>
+          </ul>
+          <ul class="space-y-0.5 mb-3" id="menuReportUserItems">
+            <li>
+              <button onclick="loadPage('report_my_pending')" data-page="report_my_pending" class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-time-forward w-4 text-center text-base"></i><span>รายการที่กำลังรออนุมัติของตัวเอง</span>
+              </button>
+            </li>
+            <li>
+              <button onclick="loadPage('report_my_transactions')" data-page="report_my_transactions" class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-list w-4 text-center text-base"></i><span>ประวัติการเคลื่อนไหวของตัวเอง</span>
+              </button>
+            </li>
+            <li>
+              <button onclick="loadPage('report_my_notifications')" data-page="report_my_notifications" class="menu-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-navy-700 transition text-blue-100">
+                <i class="fi fi-rr-bell w-4 text-center text-base"></i><span>แจ้งเตือนของตัวเอง</span>
               </button>
             </li>
           </ul>
