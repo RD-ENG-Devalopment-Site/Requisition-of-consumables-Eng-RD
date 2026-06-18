@@ -629,7 +629,8 @@ async function addWithdrawal(env, token, wdData) {
 async function approveWithdrawal(env, token, requestId, payload) {
   const session = await requireAdmin(env, token);
   if (!session) return { success: false, message: 'ไม่มีสิทธิ์อนุมัติ' };
-  const requestRow = await env.DB.prepare('SELECT * FROM withdrawal_requests WHERE id = ? LIMIT 1').bind(String(requestId || '')).first();
+  const resolved = await resolveWithdrawalRequest(env, String(requestId || ''));
+  const requestRow = resolved.request;
   if (!requestRow) return { success: false, message: 'ไม่พบคำขอเบิก' };
   if (requestRow.status !== 'pending') return { success: false, message: 'คำขอนี้ดำเนินการแล้ว' };
 
@@ -701,7 +702,8 @@ async function approveWithdrawal(env, token, requestId, payload) {
 async function rejectWithdrawal(env, token, requestId, payload) {
   const session = await requireAdmin(env, token);
   if (!session) return { success: false, message: 'ไม่มีสิทธิ์' };
-  const requestRow = await env.DB.prepare('SELECT * FROM withdrawal_requests WHERE id = ? LIMIT 1').bind(String(requestId || '')).first();
+  const resolved = await resolveWithdrawalRequest(env, String(requestId || ''));
+  const requestRow = resolved.request;
   if (!requestRow || requestRow.status !== 'pending') return { success: false, message: 'ไม่พบคำขอหรือดำเนินการแล้ว' };
   await env.DB.prepare(
     'UPDATE withdrawal_requests SET status = ?, approved_by_user_id = ?, approved_by_name = ?, approved_at = ?, reject_reason = ?, updated_at = ? WHERE id = ?'
@@ -713,7 +715,8 @@ async function rejectWithdrawal(env, token, requestId, payload) {
 async function cancelWithdrawal(env, token, requestId) {
   const session = await validateSession(env, token);
   if (!session) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
-  const requestRow = await env.DB.prepare('SELECT * FROM withdrawal_requests WHERE id = ? LIMIT 1').bind(String(requestId || '')).first();
+  const resolved = await resolveWithdrawalRequest(env, String(requestId || ''));
+  const requestRow = resolved.request;
   if (!requestRow) return { success: false, message: 'ไม่พบคำขอ' };
   if (requestRow.requested_by_user_id !== session.user_id) return { success: false, message: 'ไม่มีสิทธิ์ยกเลิก' };
   if (requestRow.status !== 'pending') return { success: false, message: 'คำขอนี้ดำเนินการแล้ว' };
@@ -779,9 +782,20 @@ async function getDashboardStats(env, token) {
   if (!session) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
   const itemsResult = await env.DB.prepare('SELECT * FROM items WHERE is_active = 1').all();
   const withdrawalResult = await env.DB.prepare('SELECT * FROM withdrawal_requests').all();
+  const withdrawalLineResult = await env.DB.prepare(
+    `SELECT wr.id AS request_id, wr.withdraw_no, wr.request_group, wr.purpose, wr.note, wr.status,
+            wr.requested_by_user_id, wr.requested_by_name, wr.requested_at, wr.approved_by_user_id,
+            wr.approved_by_name, wr.approved_at, wr.reject_reason, wr.via_qr,
+            wri.id AS line_id, wri.item_id, wri.unit, wri.item_type, wri.quantity_requested, wri.quantity_approved,
+            i.item_code, i.item_name
+     FROM withdrawal_requests wr
+     JOIN withdrawal_request_items wri ON wri.withdrawal_request_id = wr.id
+     JOIN items i ON i.id = wri.item_id`
+  ).all();
   const transactionResult = await env.DB.prepare('SELECT * FROM transactions').all();
   const items = (itemsResult.results || []).map(mapItemRow);
   const withdrawals = withdrawalResult.results || [];
+  const withdrawalLines = withdrawalLineResult.results || [];
   const transactions = transactionResult.results || [];
   const today = new Date().toISOString().slice(0, 10);
   const threshold = await resolveThreshold(env);
@@ -793,40 +807,92 @@ async function getDashboardStats(env, token) {
   const topMap = new Map();
   transactions.filter((row) => row.tx_type === 'withdraw').forEach((row) => {
     const key = row.item_id;
-    const prev = topMap.get(key) || { item_id: key, item_name: row.item_name, item_code: row.item_code, quantity: 0 };
-    prev.quantity += toNumber(row.quantity);
+    const prev = topMap.get(key) || { item_id: key, item_name: row.item_name, item_code: row.item_code, qty: 0, name: row.item_name };
+    prev.qty += toNumber(row.quantity);
     topMap.set(key, prev);
   });
-  const topItems = [...topMap.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 5);
+  const topItems = [...topMap.values()].sort((a, b) => b.qty - a.qty).slice(0, 5);
 
-  const monthlyMap = new Map();
+  const typeStats = {
+    consumable: { monthly: [], category_stock: {} },
+    spare_part: { monthly: [], category_stock: {} }
+  };
+  const monthMapByType = {
+    consumable: new Map(),
+    spare_part: new Map()
+  };
   transactions.forEach((row) => {
+    const itemType = row.item_type === 'spare_part' ? 'spare_part' : 'consumable';
     const monthKey = String(row.tx_date || '').slice(0, 7);
     if (!monthKey) return;
-    const current = monthlyMap.get(monthKey) || { month: monthKey, receive: 0, withdraw: 0 };
+    const current = monthMapByType[itemType].get(monthKey) || { month: monthKey, label: monthKey, receive: 0, withdraw: 0 };
     if (row.tx_type === 'receive') current.receive += toNumber(row.quantity);
     if (row.tx_type === 'withdraw') current.withdraw += toNumber(row.quantity);
-    monthlyMap.set(monthKey, current);
+    monthMapByType[itemType].set(monthKey, current);
   });
-  const monthly = [...monthlyMap.values()].sort((a, b) => a.month.localeCompare(b.month)).slice(-6);
+  Object.keys(typeStats).forEach((typeKey) => {
+    typeStats[typeKey].monthly = [...monthMapByType[typeKey].values()]
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .slice(-6)
+      .map((entry) => ({
+        label: formatMonthLabel(entry.month),
+        receive: entry.receive,
+        withdraw: entry.withdraw
+      }));
+  });
+  items.forEach((item) => {
+    var typeKey = item.item_type === 'spare_part' ? 'spare_part' : 'consumable';
+    var categoryKey = item.category || '-';
+    typeStats[typeKey].category_stock[categoryKey] = (typeStats[typeKey].category_stock[categoryKey] || 0) + toNumber(item.current_stock);
+  });
+
+  const recentTransactions = transactions
+    .slice()
+    .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+    .slice(0, 6)
+    .map((row) => ({
+      id: row.id,
+      type: row.tx_type,
+      item_name: row.item_name || '',
+      quantity: toNumber(row.quantity),
+      unit: findUnitForItem(items, row.item_id),
+      actor_name: row.actor_name || '',
+      date: row.tx_date
+    }));
+
+  const recentPending = withdrawalLines
+    .filter((row) => row.status === 'pending')
+    .sort((a, b) => String(b.requested_at || '').localeCompare(String(a.requested_at || '')))
+    .slice(0, 6)
+    .map((row) => ({
+      id: row.line_id,
+      request_id: row.request_id,
+      withdraw_no: row.withdraw_no,
+      item_name: row.item_name || '',
+      item_code: row.item_code || '',
+      quantity_requested: toNumber(row.quantity_requested),
+      unit: row.unit || '',
+      requested_by_name: row.requested_by_name || '',
+      requested_at: row.requested_at
+    }));
 
   return {
     success: true,
-    data: {
-      summary: {
-        total_items: items.length,
-        low_stock: lowStockItems.length,
-        pending_withdrawals: pending.length,
-        today_transactions: todayTransactions.length
-      },
+    kpi: {
       total_items: items.length,
       low_stock: lowStockItems.length,
-      pending_wds: pending.length,
-      today_txs: todayTransactions.length,
-      monthly,
-      top_items: topItems,
-      low_stock_items: lowStockItems.slice(0, 10)
-    }
+      pending: pending.length,
+      today_tx: todayTransactions.length
+    },
+    total_items: items.length,
+    low_stock: lowStockItems.length,
+    pending_wds: pending.length,
+    today_txs: todayTransactions.length,
+    low_stock_items: lowStockItems.slice(0, 10),
+    top_items: topItems,
+    recent_transactions: recentTransactions,
+    recent_pending: recentPending,
+    type_stats: typeStats
   };
 }
 
@@ -1329,4 +1395,24 @@ function mapBusinessFailureStatus(result) {
   if ((result.message || '').includes('ไม่มีสิทธิ์')) return 403;
   if ((result.message || '').includes('ไม่พบ')) return 404;
   return 200;
+}
+
+async function resolveWithdrawalRequest(env, idOrLineId) {
+  var request = await env.DB.prepare('SELECT * FROM withdrawal_requests WHERE id = ? LIMIT 1').bind(String(idOrLineId || '')).first();
+  if (request) return { request };
+  var line = await env.DB.prepare('SELECT withdrawal_request_id FROM withdrawal_request_items WHERE id = ? LIMIT 1').bind(String(idOrLineId || '')).first();
+  if (!line) return { request: null };
+  request = await env.DB.prepare('SELECT * FROM withdrawal_requests WHERE id = ? LIMIT 1').bind(line.withdrawal_request_id).first();
+  return { request };
+}
+
+function formatMonthLabel(monthKey) {
+  if (!monthKey || monthKey.indexOf('-') === -1) return monthKey || '';
+  var parts = monthKey.split('-');
+  return parts[1] + '/' + (Number(parts[0]) + 543);
+}
+
+function findUnitForItem(items, itemId) {
+  var found = (items || []).find(function(item) { return item.id === itemId; });
+  return found ? found.unit : '';
 }
