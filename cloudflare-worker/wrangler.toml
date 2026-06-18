@@ -1,0 +1,29 @@
+name = "requisition-consumables-api"
+main = "src/index.js"
+compatibility_date = "2026-06-18"
+
+[vars]
+APP_NAME = "Requisition of consumables (Eng-RD) System"
+APP_VERSION = "3.09"
+APP_SALT = "SUP_SYS_2569_SALT"
+SESSION_TIMEOUT_SEC = "28800"
+LOW_STOCK_DEFAULT = "5"
+ALLOW_GAS_FALLBACK = "true"
+GAS_FALLBACK_URL = "https://script.google.com/macros/s/AKfycbwh5YLI5jXSnGyNWRa_sRQ8lrnhQqryRRtdI9J_J8xbntzDDyx1O_qaw-Hgfh8cZ0tz/exec"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "requisition-consumables-db"
+database_id = "0bc7830d-d58f-418e-84c2-c0c8068fa4ba"
+
+[[kv_namespaces]]
+binding = "APP_CACHE"
+id = "9017befe14024eddbc152918a588b2f0"
+
+[env.dev.vars]
+ALLOW_GAS_FALLBACK = "true"
+GAS_FALLBACK_URL = "https://script.google.com/macros/s/AKfycbwh5YLI5jXSnGyNWRa_sRQ8lrnhQqryRRtdI9J_J8xbntzDDyx1O_qaw-Hgfh8cZ0tz/exec"
+
+[env.prod.vars]
+ALLOW_GAS_FALLBACK = "false"
+GAS_FALLBACK_URL = "https://script.google.com/macros/s/AKfycbwh5YLI5jXSnGyNWRa_sRQ8lrnhQqryRRtdI9J_J8xbntzDDyx1O_qaw-Hgfh8cZ0tz/exec"

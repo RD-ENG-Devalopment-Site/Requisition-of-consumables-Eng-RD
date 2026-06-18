@@ -1,0 +1,16 @@
+{
+  "name": "requisition-consumables-cloudflare-worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "d1:migrate": "wrangler d1 migrations apply requisition-consumables-db",
+    "import:sql": "node scripts/generate-import-sql.mjs",
+    "export:gas": "node scripts/export-from-gas.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.102.0"
+  }
+}
