@@ -586,7 +586,7 @@ async function addWithdrawal(env, token, wdData) {
       `INSERT INTO withdrawal_requests (
         id, withdraw_no, request_group, purpose, note, status, via_qr, requested_by_user_id, requested_by_name,
         requested_at, approved_by_user_id, approved_by_name, approved_at, reject_reason, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, '', '', '', '', ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)`
     ).bind(
       requestId,
       withdrawNo,
