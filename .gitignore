@@ -3,3 +3,5 @@ cloudflare-worker/node_modules/
 cloudflare-worker/.wrangler/
 cloudflare-worker/tmp/
 exports/
+ping.txt
+test-write.txt

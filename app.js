@@ -320,8 +320,12 @@ function loadPage(page) {
   
   var pageTitleEl = document.getElementById('pageTitle');
   if (pageTitleEl) pageTitleEl.textContent = titles[page] || page;
-  
-  // ตัดโครงสร้าง Breadcrumbs คอนฟิกออก ป้องกันปัญหาการพยายามเข้าถึง Element ที่ไม่มีอยู่จริง
+
+  var pageBreadcrumbEl = document.getElementById('pageBreadcrumb');
+  if (pageBreadcrumbEl) {
+    var appName = APP_SETTINGS.appName || 'Requisition of consumables (Eng-RD) System';
+    pageBreadcrumbEl.textContent = appName + ' / ' + (titles[page] || page);
+  }
   
   var sidebar = document.getElementById('sidebar');
   var sidebarOverlay = document.getElementById('sidebarOverlay');
