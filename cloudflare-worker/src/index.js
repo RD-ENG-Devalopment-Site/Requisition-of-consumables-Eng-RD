@@ -350,7 +350,7 @@ async function addItem(env, token, itemData) {
     intVal(itemData?.min_stock, 5),
     String(itemData?.spare_part_units || ''),
     String(itemData?.description || ''),
-    String(itemData?.image_file_id || ''),
+    nullableText(itemData?.image_file_id),
     now,
     now
   ).run();
@@ -387,7 +387,7 @@ async function updateItem(env, token, itemId, itemData) {
     intVal(typeof itemData?.min_stock === 'undefined' ? existing.min_stock : itemData.min_stock, 0),
     String(itemData?.spare_part_units ?? existing.spare_part_units ?? ''),
     String(itemData?.description ?? existing.description ?? ''),
-    String(itemData?.image_file_id ?? existing.image_file_id ?? ''),
+    hasOwn(itemData, 'image_file_id') ? nullableText(itemData?.image_file_id) : nullableText(existing.image_file_id),
     boolInt(typeof itemData?.active === 'undefined' ? existing.is_active : itemData.active),
     new Date().toISOString(),
     existing.id
@@ -1017,11 +1017,15 @@ async function updateUser(env, token, userId, data) {
   const existing = await env.DB.prepare('SELECT * FROM users WHERE id = ? LIMIT 1').bind(String(userId || '')).first();
   if (!existing) return { success: false, message: 'ไม่พบผู้ใช้' };
   const nextRole = session.role === 'admin' ? String(data?.role || existing.role) : existing.role;
+  const nextUsername = session.role === 'admin' ? String(data?.username || existing.username) : existing.username;
+  const nextPasswordHash = data?.password ? await hashPassword(String(data.password), env) : existing.password_hash;
   await env.DB.prepare(
     `UPDATE users SET
-      role = ?, full_name = ?, email = ?, phone = ?, avatar_file_id = ?, telegram_chat_id = ?, is_active = ?, updated_at = ?
+      username = ?, password_hash = ?, role = ?, full_name = ?, email = ?, phone = ?, avatar_file_id = ?, telegram_chat_id = ?, is_active = ?, updated_at = ?
      WHERE id = ?`
   ).bind(
+    nextUsername,
+    nextPasswordHash,
     nextRole,
     String(data?.name ?? existing.full_name ?? ''),
     String(data?.email ?? existing.email ?? ''),
@@ -1388,6 +1392,16 @@ function toNumber(value) {
 
 function defaultTrue(value) {
   return typeof value === 'undefined' ? true : value;
+}
+
+function nullableText(value) {
+  if (typeof value === 'undefined' || value === null) return null;
+  var text = String(value).trim();
+  return text ? text : null;
+}
+
+function hasOwn(obj, key) {
+  return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
 }
 
 function mapBusinessFailureStatus(result) {
