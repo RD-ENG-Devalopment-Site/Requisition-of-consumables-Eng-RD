@@ -331,7 +331,9 @@ function loadPage(page) {
 
   var pageBreadcrumbEl = document.getElementById('pageBreadcrumb');
   if (pageBreadcrumbEl) {
-    var appName = APP_SETTINGS.appName || 'Requisition of consumables (Eng-RD) System';
+    var appName = (typeof APP_SETTINGS !== 'undefined' && APP_SETTINGS && (APP_SETTINGS.appName || APP_SETTINGS.app_name))
+      ? (APP_SETTINGS.appName || APP_SETTINGS.app_name)
+      : 'Requisition of consumables (Eng-RD) System';
     pageBreadcrumbEl.textContent = appName + ' / ' + (titles[page] || page);
   }
   
