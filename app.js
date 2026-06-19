@@ -15,22 +15,30 @@ var _QR_ITEM_ID = '';
 // ===== AUTH =====
 var _hasBrowserWindow = typeof window !== 'undefined';
 var _browserLocalStorage = _hasBrowserWindow && typeof localStorage !== 'undefined' ? localStorage : null;
+function safeStorageGet(key, fallback) {
+  if (!_browserLocalStorage) return fallback;
+  try { return _browserLocalStorage.getItem(key); } catch (e) { return fallback; }
+}
+function safeStorageSet(key, value) {
+  if (!_browserLocalStorage) return false;
+  try { _browserLocalStorage.setItem(key, value); return true; } catch (e) { return false; }
+}
+function safeStorageRemove(key) {
+  if (!_browserLocalStorage) return false;
+  try { _browserLocalStorage.removeItem(key); return true; } catch (e) { return false; }
+}
 var AUTH = {
-  token: _browserLocalStorage ? (_browserLocalStorage.getItem('sup_token') || '') : '',
-  user: _browserLocalStorage ? JSON.parse(_browserLocalStorage.getItem('sup_user') || 'null') : null,
+  token: _browserLocalStorage ? (safeStorageGet('sup_token', '') || '') : '',
+  user: _browserLocalStorage ? JSON.parse(safeStorageGet('sup_user', 'null') || 'null') : null,
   set: function(token, user) {
     AUTH.token = token; AUTH.user = user;
-    if (_browserLocalStorage) {
-      _browserLocalStorage.setItem('sup_token', token);
-      _browserLocalStorage.setItem('sup_user', JSON.stringify(user));
-    }
+    safeStorageSet('sup_token', token);
+    safeStorageSet('sup_user', JSON.stringify(user));
   },
   clear: function() {
     AUTH.token = ''; AUTH.user = null;
-    if (_browserLocalStorage) {
-      _browserLocalStorage.removeItem('sup_token');
-      _browserLocalStorage.removeItem('sup_user');
-    }
+    safeStorageRemove('sup_token');
+    safeStorageRemove('sup_user');
   },
   hasRole: function(roles) {
     if (!AUTH.user) return false;
@@ -239,7 +247,7 @@ function initApp() {
     hideLoading();
     if (!session) { AUTH.clear(); showLoginPage(); return; }
     AUTH.user = { id: session.user_id, username: session.username, role: session.role, name: session.name };
-    localStorage.setItem('sup_user', JSON.stringify(AUTH.user));
+    safeStorageSet('sup_user', JSON.stringify(AUTH.user));
     showMainShell();
     loadPage('dashboard');
     
@@ -369,13 +377,13 @@ function toggleMenuSection(section) {
   var group = document.querySelector('.menu-group[data-section="' + section + '"]');
   if (!group) return;
   var collapsed = group.classList.toggle('collapsed');
-  var state = JSON.parse(localStorage.getItem('menu_collapsed') || '{}');
+  var state = JSON.parse(safeStorageGet('menu_collapsed', '{}') || '{}');
   state[section] = collapsed;
-  localStorage.setItem('menu_collapsed', JSON.stringify(state));
+  safeStorageSet('menu_collapsed', JSON.stringify(state));
 }
 
 function initMenuSections() {
-  var state = JSON.parse(localStorage.getItem('menu_collapsed') || '{}');
+  var state = JSON.parse(safeStorageGet('menu_collapsed', '{}') || '{}');
   document.querySelectorAll('.menu-group').forEach(function(group) {
     var section = group.getAttribute('data-section');
     if (state[section]) group.classList.add('collapsed');
@@ -3298,7 +3306,7 @@ function saveProfile(userId) {
     hideLoading();
     if (res.success) {
       AUTH.user.name = data.name;
-      localStorage.setItem('sup_user', JSON.stringify(AUTH.user));
+      safeStorageSet('sup_user', JSON.stringify(AUTH.user));
       var sbName = document.getElementById('sidebarName');
       if (sbName) sbName.textContent = data.name;
       showSuccess(res.message);
