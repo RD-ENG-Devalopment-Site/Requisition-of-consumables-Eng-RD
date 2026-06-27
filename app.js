@@ -3243,6 +3243,8 @@ function exportLowStockPurchaseExcel() {
     if (!lowItems.length) { showError('ไม่มีรายการสต็อกต่ำสำหรับ Export'); return; }
 
     var title = 'แบบฟอร์มการขอเปิดซื้ออะไหล่และอุปกรณ์ inventory';
+    var purchaseSheetName = 'เปิดซื้อ';
+    var detailSheetName = 'ข้อมูลสต็อกต่ำ';
     var sheetData = [];
     sheetData.push([title]);
     sheetData.push([]);
@@ -3278,11 +3280,72 @@ function exportLowStockPurchaseExcel() {
       { wch: 16 },
       { wch: 16 }
     ];
+    ws['!rows'] = [{ hpt: 24 }, { hpt: 10 }, { hpt: 22 }];
+
+    function buildBorder() {
+      return {
+        top: { style: 'thin', color: { rgb: '000000' } },
+        bottom: { style: 'thin', color: { rgb: '000000' } },
+        left: { style: 'thin', color: { rgb: '000000' } },
+        right: { style: 'thin', color: { rgb: '000000' } }
+      };
+    }
+
+    function applyCellStyle(sheet, address, style) {
+      if (!sheet[address]) sheet[address] = { t: 's', v: '' };
+      sheet[address].s = style;
+    }
+
+    function buildStyle(options) {
+      options = options || {};
+      return {
+        font: {
+          name: 'Angsana New',
+          sz: options.fontSize || 14,
+          bold: !!options.bold
+        },
+        alignment: {
+          horizontal: options.align || 'center',
+          vertical: 'center',
+          wrapText: options.wrap !== false
+        },
+        border: options.border === false ? undefined : buildBorder(),
+        fill: options.fill ? { patternType: 'solid', fgColor: { rgb: options.fill } } : undefined,
+        numFmt: options.numFmt || undefined
+      };
+    }
+
+    function applyStyleRange(sheet, startRow, endRow, startCol, endCol, styleBuilder) {
+      for (var r = startRow; r <= endRow; r++) {
+        for (var c = startCol; c <= endCol; c++) {
+          applyCellStyle(sheet, XLSX.utils.encode_cell({ r: r, c: c }), styleBuilder(r, c));
+        }
+      }
+    }
 
     for (var rowIndex = 4; rowIndex <= lowItems.length + 3; rowIndex++) {
       ws['G' + rowIndex] = { t: 'n', f: 'IF(OR(D' + rowIndex + '="",F' + rowIndex + '=""),"",D' + rowIndex + '*F' + rowIndex + ')' };
     }
     ws['G' + totalRowIndex] = { t: 'n', f: 'SUM(G4:G' + (lowItems.length + 3) + ')' };
+
+    applyCellStyle(ws, 'A1', buildStyle({ fontSize: 16, bold: false, align: 'center', border: false, wrap: false }));
+    applyStyleRange(ws, 2, 2, 0, 6, function() {
+      return buildStyle({ fontSize: 14, bold: true, fill: 'BFBFBF', align: 'center', wrap: false });
+    });
+    applyStyleRange(ws, 3, lowItems.length + 2, 0, 6, function(r, c) {
+      var align = c === 2 ? 'left' : 'center';
+      var numFmt = (c === 5 || c === 6) ? '#,##0.00' : undefined;
+      return buildStyle({ fontSize: 14, align: align, numFmt: numFmt });
+    });
+    applyStyleRange(ws, totalRowIndex - 1, totalRowIndex - 1, 0, 6, function(r, c) {
+      return buildStyle({
+        fontSize: 14,
+        bold: c >= 5,
+        fill: c >= 5 ? 'E7E6E6' : undefined,
+        align: c === 6 ? 'right' : 'center',
+        numFmt: c === 6 ? '#,##0.00' : undefined
+      });
+    });
 
     var detailHeaders = ['ลำดับ', 'Item', 'รายการ', 'ประเภท', 'หมวด', 'คงเหลือ', 'ขั้นต่ำ', 'จำนวนแนะนำสั่งซื้อ', 'หน่วย'];
     var detailRows = [detailHeaders];
@@ -3311,10 +3374,17 @@ function exportLowStockPurchaseExcel() {
       { wch: 18 },
       { wch: 10 }
     ];
+    detailWs['!rows'] = [{ hpt: 22 }];
+    applyStyleRange(detailWs, 0, 0, 0, 8, function() {
+      return buildStyle({ fontSize: 14, bold: true, fill: 'D9D9D9', align: 'center', wrap: false });
+    });
+    applyStyleRange(detailWs, 1, detailRows.length - 1, 0, 8, function(r, c) {
+      return buildStyle({ fontSize: 14, align: c === 2 || c === 4 ? 'left' : 'center' });
+    });
 
     var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'เปิดซื้อ');
-    XLSX.utils.book_append_sheet(wb, detailWs, 'ข้อมูลสต็อกต่ำ');
+    XLSX.utils.book_append_sheet(wb, ws, purchaseSheetName);
+    XLSX.utils.book_append_sheet(wb, detailWs, detailSheetName);
     XLSX.writeFile(wb, 'แบบฟอร์มเปิดซื้อ_สต็อกต่ำ.xlsx');
   }).catch(function() {
     hideLoading();
