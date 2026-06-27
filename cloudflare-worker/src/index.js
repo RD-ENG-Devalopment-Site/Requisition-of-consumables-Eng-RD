@@ -28,6 +28,7 @@ const LOCAL_COMPAT_FUNCTIONS = new Set([
   'addUser',
   'updateUser',
   'toggleUserActive',
+  'deleteUser',
   'changePassword',
   'resetUserPassword',
   'saveConfig'
@@ -165,6 +166,7 @@ async function dispatchCompat(fn, args, env) {
     case 'addUser': return addUser(env, args[0], args[1]);
     case 'updateUser': return updateUser(env, args[0], args[1], args[2]);
     case 'toggleUserActive': return toggleUserActive(env, args[0], args[1]);
+    case 'deleteUser': return deleteUser(env, args[0], args[1]);
     case 'changePassword': return changePassword(env, args[0], args[1], args[2]);
     case 'resetUserPassword': return resetUserPassword(env, args[0], args[1]);
     case 'saveConfig': return saveConfig(env, args[0], args[1]);
@@ -1050,6 +1052,32 @@ async function toggleUserActive(env, token, userId) {
     .bind(next, new Date().toISOString(), existing.id).run();
   await logAudit(env, session, 'toggle_user_active', 'users', `สลับสถานะผู้ใช้ ${existing.username}`);
   return { success: true, message: 'อัปเดตสถานะผู้ใช้เรียบร้อย' };
+}
+
+async function deleteUser(env, token, userId) {
+  const session = await requireAdmin(env, token);
+  if (!session) return { success: false, message: 'ไม่มีสิทธิ์ดำเนินการ' };
+  const existing = await env.DB.prepare('SELECT id, username, role FROM users WHERE id = ? LIMIT 1').bind(String(userId || '')).first();
+  if (!existing) return { success: false, message: 'ไม่พบผู้ใช้งาน' };
+  if (existing.id === session.user_id) return { success: false, message: 'ไม่สามารถลบบัญชีที่กำลังใช้งานอยู่ได้' };
+
+  if (existing.role === 'admin') {
+    const adminCountRow = await env.DB.prepare("SELECT COUNT(*) AS total FROM users WHERE role = 'admin'").first();
+    if (toNumber(adminCountRow?.total) <= 1) {
+      return { success: false, message: 'ต้องมีผู้ดูแลระบบอย่างน้อย 1 บัญชี' };
+    }
+  }
+
+  const linkedWithdrawalRow = await env.DB.prepare(
+    'SELECT withdraw_no FROM withdrawal_requests WHERE requested_by_user_id = ? LIMIT 1'
+  ).bind(existing.id).first();
+  if (linkedWithdrawalRow) {
+    return { success: false, message: 'ไม่สามารถลบผู้ใช้นี้ได้ เนื่องจากมีประวัติคำขอเบิกที่ผูกอยู่ในระบบ' };
+  }
+
+  await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(existing.id).run();
+  await logAudit(env, session, 'delete_user', 'users', `ลบผู้ใช้ ${existing.username}`);
+  return { success: true, message: 'ลบผู้ใช้งานเรียบร้อย' };
 }
 
 async function changePassword(env, token, oldPass, newPass) {

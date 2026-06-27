@@ -3400,11 +3400,12 @@ function buildUsersPage() {
     html += '<td class="px-4 py-2.5 text-xs text-gray-500">' + escHtml(u.email || '-') + '</td>';
     html += '<td class="px-4 py-2.5 text-xs text-gray-400">' + formatDateTime(u.last_login) + '</td>';
     html += '<td class="px-4 py-2.5 text-center"><span class="px-2 py-0.5 rounded-full text-xs font-medium ' + (u.active !== false ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700') + '">' + (u.active !== false ? 'ใช้งาน' : 'ระงับ') + '</span></td>';
-    html += '<td class="px-4 py-2.5 text-center"><div class="flex gap-1 justify-center">';
-    html += '<button onclick="openEditUserModal(\'' + u.id + '\')" title="แก้ไข" class="w-7 h-7 bg-blue-100 text-blue-700 rounded-lg flex items-center justify-center hover:bg-blue-200"><i class="fi fi-rr-edit text-xs"></i></button>';
-    html += '<button onclick="doResetPassword(\'' + u.id + '\')" title="Reset Password" class="w-7 h-7 bg-amber-100 text-amber-700 rounded-lg flex items-center justify-center hover:bg-amber-200"><i class="fi fi-rr-lock text-xs"></i></button>';
-    if (u.id !== AUTH.user.id) {
+    html += '<td class="px-4 py-2.5 text-center"><div class="flex gap-1 justify-center">';
+    html += '<button onclick="openEditUserModal(\'' + u.id + '\')" title="แก้ไข" class="w-7 h-7 bg-blue-100 text-blue-700 rounded-lg flex items-center justify-center hover:bg-blue-200"><i class="fi fi-rr-edit text-xs"></i></button>';
+    html += '<button onclick="doResetPassword(\'' + u.id + '\')" title="Reset Password" class="w-7 h-7 bg-amber-100 text-amber-700 rounded-lg flex items-center justify-center hover:bg-amber-200"><i class="fi fi-rr-lock text-xs"></i></button>';
+    if (u.id !== AUTH.user.id) {
       html += '<button onclick="doToggleUser(\'' + u.id + '\',\'' + escHtml(u.name || u.username) + '\')" title="' + (u.active !== false ? 'ระงับ' : 'เปิด') + 'บัญชี" class="w-7 h-7 ' + (u.active !== false ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200') + ' rounded-lg flex items-center justify-center"><i class="fi fi-rr-' + (u.active !== false ? 'ban' : 'check-circle') + ' text-xs"></i></button>';
+      html += '<button onclick="doDeleteUser(\'' + u.id + '\',\'' + escHtml(u.name || u.username) + '\')" title="ลบผู้ใช้" class="w-7 h-7 bg-rose-100 text-rose-700 rounded-lg flex items-center justify-center hover:bg-rose-200"><i class="fi fi-rr-trash text-xs"></i></button>';
     }
     html += '</div></td></tr>';
   });
@@ -3423,6 +3424,9 @@ function buildUsersPage() {
     html += '<div class="flex gap-1">';
     html += '<button onclick="openEditUserModal(\'' + u.id + '\')" class="w-8 h-8 bg-blue-100 text-blue-700 rounded-xl flex items-center justify-center"><i class="fi fi-rr-edit text-sm"></i></button>';
     html += '<button onclick="doResetPassword(\'' + u.id + '\')" class="w-8 h-8 bg-amber-100 text-amber-700 rounded-xl flex items-center justify-center"><i class="fi fi-rr-lock text-sm"></i></button>';
+    if (u.id !== AUTH.user.id) {
+      html += '<button onclick="doDeleteUser(\'' + u.id + '\',\'' + escHtml(u.name || u.username) + '\')" class="w-8 h-8 bg-rose-100 text-rose-700 rounded-xl flex items-center justify-center"><i class="fi fi-rr-trash text-sm"></i></button>';
+    }
     html += '</div></div>';
   });
   html += '</div></div>';
@@ -3538,6 +3542,17 @@ function doToggleUser(userId, name) {
       else showError(res.message);
     }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
   }, action + 'บัญชี');
+}
+
+function doDeleteUser(userId, name) {
+  showConfirm('ลบผู้ใช้', 'ลบผู้ใช้ "' + name + '" ใช่หรือไม่? การลบนี้ไม่สามารถย้อนกลับได้', function() {
+    showLoading('กำลังลบผู้ใช้งาน...');
+    callAPI('deleteUser', AUTH.token, userId).then(function(res) {
+      hideLoading();
+      if (res.success) { showSuccess(res.message); renderUsers(); }
+      else showError(res.message);
+    }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+  }, 'ลบผู้ใช้');
 }
 
 // ===== ON LOAD =====
