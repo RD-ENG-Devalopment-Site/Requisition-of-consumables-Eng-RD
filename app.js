@@ -109,6 +109,22 @@ function escHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+function formatCurrency(value) {
+  var num = Number(value || 0);
+  if (!isFinite(num)) num = 0;
+  return num.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function isAdminUser() {
+  return !!(AUTH.user && AUTH.user.role === 'admin');
+}
+function parseItemSerialList(value) {
+  if (!value) return [];
+  try {
+    return (JSON.parse(value) || []).map(function(s) { return String(s || '').trim(); }).filter(Boolean);
+  } catch (e) {
+    return String(value || '').split(/[\r\n,;]+/).map(function(s) { return String(s || '').trim(); }).filter(Boolean);
+  }
+}
 function togglePass(inputId, btn) {
   var inp = document.getElementById(inputId);
   if (!inp) return;
@@ -427,8 +443,13 @@ function performGlobalSearch() {
   
   (_itemsData || []).forEach(function(i) {
     if (i.active === false) return;
-    if ((i.name || '').toLowerCase().includes(term) || (i.item_code || '').toLowerCase().includes(term) || (i.category || '').toLowerCase().includes(term)) {
-      matches.push({ type: 'item', id: i.id, name: i.name, code: i.item_code, sub: 'คงเหลือ ' + (i.current_stock || 0) + ' ' + (i.unit || ''), image: i.image_file_id });
+    if (itemSearchHaystack(i).indexOf(term) !== -1) {
+      var machineText = getMachineUsageText(i);
+      var serialText = parseItemSerialList(i.spare_part_units || '').slice(0, 2).join(', ');
+      var subParts = ['คงเหลือ ' + (i.current_stock || 0) + ' ' + (i.unit || '')];
+      if (machineText && machineText !== '-') subParts.push(machineText);
+      if (serialText) subParts.push('Serial: ' + serialText);
+      matches.push({ type: 'item', id: i.id, name: i.name, code: i.item_code, sub: subParts.join(' • '), image: i.image_file_id });
     }
   });
   
@@ -529,6 +550,51 @@ function renderDashboard() {
       html += '</div>';
     });
     html += '</div>';
+
+    if (isAdminUser()) {
+      var exec = d.executive || {};
+      var pendingExec = exec.top_pending_items || [];
+      var idleExec = exec.idle_items_90d || [];
+      html += '<div class="card border border-emerald-100 bg-emerald-50/50">';
+      html += '<div class="card-header"><h3 class="font-semibold text-emerald-800 text-sm flex items-center gap-2"><i class="fi fi-rr-chart-line-up text-emerald-600"></i> Dashboard ผู้บริหาร</h3></div>';
+      html += '<div class="card-body space-y-4">';
+      html += '<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">';
+      html += '<div class="rounded-2xl border border-emerald-200 bg-white p-4"><p class="text-xs text-emerald-600 font-semibold uppercase tracking-wide">มูลค่าสต็อก</p><p class="mt-2 text-2xl font-bold text-gray-800">' + formatCurrency(exec.total_stock_value || 0) + '</p><p class="text-xs text-gray-500 mt-1">บาท</p></div>';
+      html += '<div class="rounded-2xl border border-amber-200 bg-white p-4"><p class="text-xs text-amber-600 font-semibold uppercase tracking-wide">มูลค่าของใกล้หมด</p><p class="mt-2 text-2xl font-bold text-gray-800">' + formatCurrency(exec.low_stock_value || 0) + '</p><p class="text-xs text-gray-500 mt-1">บาท</p></div>';
+      html += '<div class="rounded-2xl border border-purple-200 bg-white p-4"><p class="text-xs text-purple-600 font-semibold uppercase tracking-wide">Top ค้างอนุมัติ</p><p class="mt-2 text-2xl font-bold text-gray-800">' + pendingExec.length + '</p><p class="text-xs text-gray-500 mt-1">รายการหลัก</p></div>';
+      html += '<div class="rounded-2xl border border-rose-200 bg-white p-4"><p class="text-xs text-rose-600 font-semibold uppercase tracking-wide">ไม่เคลื่อนไหวเกิน 90 วัน</p><p class="mt-2 text-2xl font-bold text-gray-800">' + idleExec.length + '</p><p class="text-xs text-gray-500 mt-1">รายการ</p></div>';
+      html += '</div>';
+      html += '<div class="grid grid-cols-1 xl:grid-cols-3 gap-4">';
+      html += '<div class="rounded-2xl border border-gray-200 bg-white overflow-hidden"><div class="px-4 py-3 border-b bg-gray-50"><p class="text-sm font-semibold text-gray-700">Top เบิกบ่อย</p></div><div class="divide-y">';
+      if (d.top_items && d.top_items.length) {
+        d.top_items.forEach(function(item, idx) {
+          html += '<div class="px-4 py-3 flex items-center justify-between gap-3"><div class="min-w-0"><p class="text-xs text-gray-400">อันดับ ' + (idx + 1) + '</p><p class="text-sm font-medium text-gray-700 truncate">' + escHtml(item.name || '-') + '</p></div><span class="text-sm font-bold text-navy-700">' + (item.qty || 0) + '</span></div>';
+        });
+      } else {
+        html += '<p class="px-4 py-8 text-center text-sm text-gray-400">ยังไม่มีข้อมูล</p>';
+      }
+      html += '</div></div>';
+      html += '<div class="rounded-2xl border border-gray-200 bg-white overflow-hidden"><div class="px-4 py-3 border-b bg-gray-50"><p class="text-sm font-semibold text-gray-700">Top ค้างอนุมัติ</p></div><div class="divide-y">';
+      if (pendingExec.length) {
+        pendingExec.forEach(function(item) {
+          html += '<div class="px-4 py-3 flex items-center justify-between gap-3"><div class="min-w-0"><p class="text-xs text-gray-400">' + escHtml(item.item_code || '-') + '</p><p class="text-sm font-medium text-gray-700 truncate">' + escHtml(item.item_name || '-') + '</p></div><span class="text-sm font-bold text-purple-700">' + (item.qty || 0) + '</span></div>';
+        });
+      } else {
+        html += '<p class="px-4 py-8 text-center text-sm text-gray-400">ไม่มีค้างอนุมัติ</p>';
+      }
+      html += '</div></div>';
+      html += '<div class="rounded-2xl border border-gray-200 bg-white overflow-hidden"><div class="px-4 py-3 border-b bg-gray-50"><p class="text-sm font-semibold text-gray-700">ไม่เคลื่อนไหวเกิน 90 วัน</p></div><div class="divide-y">';
+      if (idleExec.length) {
+        idleExec.slice(0, 5).forEach(function(item) {
+          html += '<div class="px-4 py-3 flex items-center justify-between gap-3"><div class="min-w-0"><p class="text-xs text-gray-400">' + escHtml(item.item_code || '-') + '</p><p class="text-sm font-medium text-gray-700 truncate">' + escHtml(item.name || '-') + '</p></div><span class="text-sm font-bold text-rose-700">' + (item.idle_days || 0) + ' วัน</span></div>';
+        });
+      } else {
+        html += '<p class="px-4 py-8 text-center text-sm text-gray-400">ไม่มีรายการค้างนิ่ง</p>';
+      }
+      html += '</div></div>';
+      html += '</div>';
+      html += '</div></div>';
+    }
 
     // Workflow การทำงาน
     html += '<div class="card">';
@@ -954,11 +1020,49 @@ function itemSearchHaystack(item) {
     item.name || '',
     item.item_code || '',
     item.category || '',
+    item.part_no || '',
     item.machine_name || '',
     String(item.compatible_machines || ''),
+    parseItemSerialList(item.spare_part_units || '').join(' '),
+    String(item.spare_part_units || ''),
     getMachineUsageText(item),
     getItemTypeLabel(getResolvedItemType(item))
   ].join(' ').toLowerCase();
+}
+function getFavoriteItems(typeFilter, machineFilter, searchText) {
+  return (_itemsData || []).filter(function(item) {
+    if (!item || !item.is_favorite || item.active === false) return false;
+    if (typeFilter && typeFilter !== 'all' && getResolvedItemType(item) !== typeFilter) return false;
+    if (machineFilter && machineFilter !== 'all' && !itemMatchesMachineFilter(item, machineFilter)) return false;
+    if (searchText && itemSearchHaystack(item).indexOf(String(searchText || '').toLowerCase()) === -1) return false;
+    return true;
+  });
+}
+function applyFavoriteState(itemId, nextState) {
+  (_itemsData || []).forEach(function(item) {
+    if (item.id === itemId) item.is_favorite = !!nextState;
+  });
+  if (_stockData && _stockData.length) {
+    _stockData.forEach(function(item) {
+      if (item.id === itemId) item.is_favorite = !!nextState;
+    });
+  }
+}
+function toggleFavoriteItem(itemId, silent) {
+  showLoading('กำลังอัปเดตรายการใช้บ่อย...');
+  callAPI('toggleFavorite', AUTH.token, itemId).then(function(res) {
+    hideLoading();
+    if (!res.success) { showError(res.message || 'อัปเดตรายการใช้บ่อยไม่สำเร็จ'); return; }
+    applyFavoriteState(itemId, res.is_favorite);
+    if (!silent) showSuccess(res.message || 'บันทึกรายการใช้บ่อยแล้ว');
+    if (_currentPage === 'stock') buildStockPage();
+    if (_currentPage === 'items' && isAdminUser()) buildItemsPage();
+    var modalTitle = document.getElementById('modalTitle');
+    if (modalTitle && modalTitle.textContent === 'เบิกวัสดุ') wdDraftRenderAll();
+  }).catch(function() {
+    hideLoading();
+    showError('อัปเดตรายการใช้บ่อยไม่สำเร็จ');
+  });
 }
 var ITEM_CONDITION_LABELS = { new: 'ใหม่', good: 'พร้อมใช้', standby: 'สำรอง', used: 'ใช้งานแล้ว', damaged: 'ชำรุด', repair: 'รอซ่อม' };
 
@@ -1017,13 +1121,14 @@ function buildItemsPage() {
   if (lowCount > 0) html += '<span class="bg-amber-50 text-amber-700 px-3 py-1.5 rounded-full font-medium"><i class="fi fi-rr-triangle-warning mr-1"></i>ใกล้หมด: ' + lowCount + '</span>';
   html += '</div>';
 
-  html += '<div class="card overflow-hidden">';
-  html += '<div class="hidden md:block overflow-x-auto">';
-  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-gray-600 text-xs">';
-  html += '<tr><th class="px-4 py-3 text-left w-10">#</th><th class="px-4 py-3 text-left w-14">รูป</th><th class="px-4 py-3 text-left">เลขไอเท็ม</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">ประเภท</th><th class="px-4 py-3 text-left">เครื่องจักร</th><th class="px-4 py-3 text-left">ขนาด</th><th class="px-4 py-3 text-left">หน่วย</th><th class="px-4 py-3 text-left">หมวดหมู่</th><th class="px-4 py-3 text-center">สต็อก</th><th class="px-4 py-3 text-center">ขั้นต่ำ</th><th class="px-4 py-3 text-center">สถานะ</th><th class="px-4 py-3 text-center">จัดการ</th></tr></thead>';
+  html += '<div class="card overflow-hidden">';
+  var showPrice = isAdminUser();
+  html += '<div class="hidden md:block overflow-x-auto">';
+  html += '<table class="w-full text-sm"><thead class="bg-gray-50 text-gray-600 text-xs">';
+  html += '<tr><th class="px-4 py-3 text-left w-10">#</th><th class="px-4 py-3 text-left w-14">รูป</th><th class="px-4 py-3 text-left">เลขไอเท็ม</th><th class="px-4 py-3 text-left">ชื่อวัสดุ</th><th class="px-4 py-3 text-left">ประเภท</th><th class="px-4 py-3 text-left">เครื่องจักร</th><th class="px-4 py-3 text-left">ขนาด</th><th class="px-4 py-3 text-left">หน่วย</th><th class="px-4 py-3 text-left">หมวดหมู่</th>' + (showPrice ? '<th class="px-4 py-3 text-right">ราคา/หน่วย</th>' : '') + '<th class="px-4 py-3 text-center">สต็อก</th><th class="px-4 py-3 text-center">ขั้นต่ำ</th><th class="px-4 py-3 text-center">สถานะ</th><th class="px-4 py-3 text-center">จัดการ</th></tr></thead>';
   html += '<tbody class="divide-y divide-gray-100">';
   if (paged.length === 0) {
-    html += '<tr><td colspan="13" class="text-center py-10 text-gray-400">ไม่พบรายการ</td></tr>';
+    html += '<tr><td colspan="' + (showPrice ? '14' : '13') + '" class="text-center py-10 text-gray-400">ไม่พบรายการ</td></tr>';
   }
   paged.forEach(function(item, idx) {
     var sClass = getStockClass(item.current_stock, item.min_stock);
@@ -1041,6 +1146,7 @@ function buildItemsPage() {
     html += '<td class="px-4 py-3 text-gray-500 text-xs">' + escHtml(item.size || '-') + '</td>';
     html += '<td class="px-4 py-3 text-gray-600 text-xs">' + escHtml(item.unit) + '</td>';
     html += '<td class="px-4 py-3 text-xs text-gray-500">' + escHtml(item.category || '-') + '</td>';
+    if (showPrice) html += '<td class="px-4 py-3 text-right text-xs font-medium text-gray-700">' + formatCurrency(item.unit_price || 0) + '</td>';
     html += '<td class="px-4 py-3 text-center font-bold text-gray-800">' + item.current_stock + '</td>';
     html += '<td class="px-4 py-3 text-center text-gray-500 text-xs">' + item.min_stock + '</td>';
     html += '<td class="px-4 py-3 text-center"><span class="px-2 py-1 rounded-full text-xs font-medium ' + sClass + '">' + sLabel + '</span></td>';
@@ -1067,7 +1173,7 @@ function buildItemsPage() {
     html += '<div><p class="font-semibold text-gray-800 text-sm leading-snug">' + escHtml(item.name) + '</p>';
     html += '<p class="text-xs text-gray-400 mt-0.5">' + escHtml(item.item_code) + ' • ' + escHtml(getItemTypeLabel(getResolvedItemType(item))) + '</p>';
     html += '<p class="text-xs text-gray-500 mt-0.5">' + escHtml(getMachineUsageText(item)) + '</p>';
-    html += '<p class="text-xs text-gray-500 mt-0.5">' + escHtml(getItemTypeLabel(getResolvedItemType(item))) + ' • ' + escHtml(item.category || '') + '</p></div>';
+    html += '<p class="text-xs text-gray-500 mt-0.5">' + escHtml(getItemTypeLabel(getResolvedItemType(item))) + ' • ' + escHtml(item.category || '') + (showPrice ? ' • ราคา ' + formatCurrency(item.unit_price || 0) : '') + '</p></div>';
     html += '<div class="flex justify-between text-xs text-gray-500"><span>คงเหลือ</span><span class="font-bold text-gray-800">' + item.current_stock + ' ' + escHtml(item.unit) + '</span></div>';
     html += '<div class="flex gap-2 pt-1">';
     html += '<button onclick="showItemDetailModal(\'' + item.id + '\')" class="flex-1 btn-secondary btn-sm text-xs"><i class="fi fi-rr-eye mr-1"></i>ดู</button>';
@@ -1271,6 +1377,7 @@ function itemFormHTML(item) {
   var serials = item.spare_part_units || '';
   var machineName = item.machine_name || '';
   var compatibleMachines = Array.isArray(item.compatible_machines) ? item.compatible_machines.join('\n') : (item.compatible_machines || '');
+  var priceField = isAdminUser() ? fieldHTML('ราคาต่อหน่วย (Admin)', 'itemUnitPrice', 'number', item.unit_price || 0, '', '0.01') : '';
   return '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'
     + fieldHTML('เลขไอเท็ม *', 'itemCode', 'text', itemCode, 'sm:col-span-2')
     + fieldHTML('ชื่อวัสดุ *', 'itemName', 'text', item.name || '', 'sm:col-span-2')
@@ -1278,6 +1385,7 @@ function itemFormHTML(item) {
     + fieldHTML('ขนาดบรรจุ', 'itemSize', 'text', item.size || '')
     + fieldHTML('หน่วย *', 'itemUnit', 'text', item.unit || '')
     + fieldHTML('หมวดหมู่', 'itemCategory', 'text', item.category || 'วัสดุทำความสะอาด')
+    + priceField
     + '<div class="item-spare-field sm:col-span-2">'
     + '<button type="button" onclick="toggleMachinePicker()" class="w-full flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100">'
     + '<span>สำหรับเครื่องจักร</span><i class="fi fi-rr-angle-down text-xs"></i></button>'
@@ -1292,10 +1400,10 @@ function itemFormHTML(item) {
     + imgSection
     + '</div>';
 }
-function fieldHTML(label, id, type, value, extra) {
+function fieldHTML(label, id, type, value, extra, step) {
   return '<div class="' + (extra || '') + '">'
     + '<label class="form-label">' + escHtml(label) + '</label>'
-    + '<input type="' + type + '" id="' + id + '" value="' + escHtml(String(value)) + '" class="form-input"></div>';
+    + '<input type="' + type + '" id="' + id + '" value="' + escHtml(String(value)) + '" ' + (step ? 'step="' + escHtml(String(step)) + '" ' : '') + 'class="form-input"></div>';
 }
 
 function suggestNextItemCode() {
@@ -1397,6 +1505,7 @@ function readItemForm() {
   var compatEl = document.getElementById('itemCompatibleMachines');
   var stockEl = document.getElementById('itemStock');
   var minEl = document.getElementById('itemMinStock');
+  var priceEl = document.getElementById('itemUnitPrice');
   var conditionEl = document.getElementById('itemCondition');
   var serialTrackEl = document.getElementById('itemSerialTracking');
   var serialsEl = document.getElementById('itemSerials');
@@ -1432,6 +1541,7 @@ function readItemForm() {
     compatible_machines: splitMachineList(compatibleMachines).join('\n'),
     current_stock: stockEl ? parseInt(stockEl.value) || 0 : 0,
     min_stock: minEl ? parseInt(minEl.value) || 5 : 5,
+    unit_price: priceEl ? parseFloat(priceEl.value) || 0 : 0,
     condition_status: condition,
     serial_tracking: serialTracking,
     spare_part_units: serialTracking ? JSON.stringify(serials.split(/\r?\n/).map(function(s){ return s.trim(); }).filter(Boolean)) : '',
@@ -1530,6 +1640,9 @@ function showItemDetailModal(itemId) {
     + '<div class="bg-gray-50 rounded-xl p-3 text-center"><p class="text-xs text-gray-400 mb-1">ประเภท</p><p class="text-sm font-semibold text-gray-700">' + escHtml(getItemTypeLabel(getResolvedItemType(item))) + '</p></div>'
     + '<div class="bg-gray-50 rounded-xl p-3 text-center"><p class="text-xs text-gray-400 mb-1">หน่วย</p><p class="text-sm font-semibold text-gray-700">' + escHtml(item.unit) + '</p></div>'
     + '</div>';
+  if (isAdminUser()) {
+    body += '<div class="bg-emerald-50 rounded-xl p-3 text-center border border-emerald-100"><p class="text-xs text-emerald-500 mb-1">ราคาต่อหน่วย</p><p class="text-sm font-semibold text-emerald-700">' + formatCurrency(item.unit_price || 0) + ' บาท</p></div>';
+  }
 
   if (getResolvedItemType(item) === 'spare_part') {
     body += '<div class="grid grid-cols-2 gap-3">'
@@ -1580,6 +1693,7 @@ function showItemDetailModal(itemId) {
   body += '</div>';
 
   var footer = '<button onclick="closeModal()" class="btn-secondary">ปิด</button>'
+    + '<button onclick="toggleFavoriteItem(\'' + item.id + '\')" class="btn-secondary"><i class="fi ' + (item.is_favorite ? 'fi-sr-star' : 'fi-rr-star') + ' mr-1 text-amber-500"></i>' + (item.is_favorite ? 'เอาออกจากใช้บ่อย' : 'เพิ่มไปใช้บ่อย') + '</button>'
     + '<button onclick="openWithdrawModal(\'' + item.id + '\')" class="btn-primary"><i class="fi fi-rr-inbox-out mr-1"></i>เบิกวัสดุ</button>';
   openModal('รายละเอียดวัสดุ', body, footer);
 }
@@ -1703,17 +1817,18 @@ function buildStockContent(data) {
   if (_stockView === 'card') {
     var html = '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">';
     if (data.length === 0) html += '<p class="col-span-4 text-center text-gray-400 py-10">ไม่พบรายการ</p>';
-    data.forEach(function(item) {
+    data.forEach(function(item) {
       var sClass = getStockClass(item.current_stock, item.min_stock);
       var sLabel = getStockLabel(item.current_stock, item.min_stock);
       var lowBadge = isLowStockItem(item) ? '<span class="absolute top-3 right-3 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold shadow-sm ' + sClass + '"><i class="fi fi-rr-triangle-warning"></i>' + sLabel + '</span>' : '';
+      var favBtn = '<button type="button" onclick="toggleFavoriteItem(\'' + item.id + '\', true)" class="absolute top-3 left-3 w-8 h-8 rounded-full border border-amber-200 bg-white/95 text-amber-500 hover:bg-amber-50 flex items-center justify-center shadow-sm" title="ใช้บ่อย"><i class="fi ' + (item.is_favorite ? 'fi-sr-star' : 'fi-rr-star') + ' text-sm"></i></button>';
       var pct = item.min_stock > 0 ? Math.min(100, Math.round(item.current_stock / (item.min_stock * 3) * 100)) : 50;
       var barColor = item.current_stock <= 0 ? 'bg-red-500' : item.current_stock <= item.min_stock ? 'bg-amber-400' : 'bg-green-500';
       html += '<div class="card p-4 flex flex-col gap-3 hover:shadow-md transition-shadow relative">';
       html += '<div class="flex items-start justify-start pr-16">';
       var imgUrlSrc = imgUrl(item.image_file_id);
       var cardImg = imgUrlSrc ? '<img src="' + imgUrlSrc + '" class="w-10 h-10 object-cover rounded-xl border border-gray-200" loading="lazy">' : '<div class="w-10 h-10 bg-navy-100 rounded-xl flex items-center justify-center"><i class="fi fi-rr-box-open-full text-navy-700 text-lg"></i></div>';
-      html += '<div>' + cardImg + '</div>' + lowBadge + '</div>';
+      html += favBtn + '<div>' + cardImg + '</div>' + lowBadge + '</div>';
       html += '<div><p class="font-semibold text-gray-800 text-sm leading-snug">' + escHtml(item.name) + '</p>';
       html += '<p class="text-xs text-gray-400 mt-0.5">' + escHtml(item.size || '') + ' • ' + escHtml(item.category || '') + '</p>';
       html += '<p class="text-xs text-gray-500 mt-0.5">' + escHtml(getItemTypeLabel(getResolvedItemType(item))) + ' • ' + escHtml(getMachineUsageText(item)) + '</p></div>';
@@ -1738,7 +1853,7 @@ function buildStockContent(data) {
     data.forEach(function(item) {
       var sClass = getStockClass(item.current_stock, item.min_stock);
       var resolvedType = getResolvedItemType(item);
-      html += '<tr><td class="px-4 py-2.5 font-mono text-xs text-navy-700">' + escHtml(item.item_code) + '</td>';
+      html += '<tr><td class="px-4 py-2.5 font-mono text-xs text-navy-700"><button type="button" onclick="toggleFavoriteItem(\'' + item.id + '\', true)" class="mr-2 text-amber-500 hover:text-amber-600 align-middle"><i class="fi ' + (item.is_favorite ? 'fi-sr-star' : 'fi-rr-star') + '"></i></button>' + escHtml(item.item_code) + '</td>';
       html += '<td class="px-4 py-2.5 font-medium text-gray-700">' + escHtml(item.name) + '</td>';
       html += '<td class="px-4 py-2.5 text-xs"><span class="px-2 py-0.5 rounded-full font-medium ' + (resolvedType === 'spare_part' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700') + '">' + escHtml(getItemTypeLabel(resolvedType)) + '</span></td>';
       html += '<td class="px-4 py-2.5 text-xs text-gray-600">' + escHtml(getMachineUsageText(item)) + '</td>';
@@ -3215,15 +3330,15 @@ function exportMonthlyExcel(year, month) {
 }
 
 function exportLowStock() {
-  showLoading('กำลัง Export...');
-  callAPI('getItems', AUTH.token).then(function(res) {
+  showLoading('กำลัง Export...');
+  callAPI('getItems', AUTH.token).then(function(res) {
     hideLoading();
     if (!res.success) { showError(res.message); return; }
     var items = (res.data || []).filter(function(i) { return i.active !== false && i.current_stock <= i.min_stock; });
     var headers = [{ key: 'item_code', title: 'เลขไอเท็ม' }, { key: 'name', title: 'ชื่อวัสดุ' }, { key: 'category', title: 'หมวดหมู่' }, { key: 'current_stock', title: 'คงเหลือ' }, { key: 'min_stock', title: 'ขั้นต่ำ' }, { key: 'unit', title: 'หน่วย' }];
     var rows = items.map(function(i) { return { item_code: i.item_code || '', name: i.name || '', category: i.category || '', current_stock: i.current_stock || 0, min_stock: i.min_stock || 0, unit: i.unit || '' }; });
-    downloadXlsx(rows, headers, 'รายงานสต็อกต่ำ');
-  }).catch(function() { hideLoading(); showError('Export ไม่สำเร็จ'); });
+    downloadXlsx(rows, headers, 'รายงานสต็อกต่ำ');
+  }).catch(function() { hideLoading(); showError('Export ไม่สำเร็จ'); });
 }
 
 function exportLowStockPurchaseExcel() {
@@ -3574,11 +3689,11 @@ function buildUsersPage() {
     html += '<button onclick="openEditUserModal(\'' + u.id + '\')" title="แก้ไข" class="w-7 h-7 bg-blue-100 text-blue-700 rounded-lg flex items-center justify-center hover:bg-blue-200"><i class="fi fi-rr-edit text-xs"></i></button>';
     html += '<button onclick="doResetPassword(\'' + u.id + '\')" title="Reset Password" class="w-7 h-7 bg-amber-100 text-amber-700 rounded-lg flex items-center justify-center hover:bg-amber-200"><i class="fi fi-rr-lock text-xs"></i></button>';
     if (u.id !== AUTH.user.id) {
-      html += '<button onclick="doToggleUser(\'' + u.id + '\',\'' + escHtml(u.name || u.username) + '\')" title="' + (u.active !== false ? 'ระงับ' : 'เปิด') + 'บัญชี" class="w-7 h-7 ' + (u.active !== false ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200') + ' rounded-lg flex items-center justify-center"><i class="fi fi-rr-' + (u.active !== false ? 'ban' : 'check-circle') + ' text-xs"></i></button>';
+      html += '<button onclick="doToggleUser(\'' + u.id + '\',\'' + escHtml(u.name || u.username) + '\')" title="' + (u.active !== false ? 'ระงับ' : 'เปิด') + 'บัญชี" class="w-7 h-7 ' + (u.active !== false ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200') + ' rounded-lg flex items-center justify-center"><i class="fi fi-rr-' + (u.active !== false ? 'ban' : 'check-circle') + ' text-xs"></i></button>';
       html += '<button onclick="doDeleteUser(\'' + u.id + '\',\'' + escHtml(u.name || u.username) + '\')" title="ลบผู้ใช้" class="w-7 h-7 bg-rose-100 text-rose-700 rounded-lg flex items-center justify-center hover:bg-rose-200"><i class="fi fi-rr-trash text-xs"></i></button>';
-    }
-    html += '</div></td></tr>';
-  });
+    }
+    html += '</div></td></tr>';
+  });
   html += '</tbody></table></div>';
 
   html += '<div class="md:hidden divide-y">';
@@ -3591,14 +3706,14 @@ function buildUsersPage() {
     html += '<p class="text-xs text-gray-400 font-mono">รหัสผ่าน ••••••••</p>';
     html += '<div class="flex gap-1.5 mt-1"><span class="px-2 py-0.5 rounded-full text-xs ' + roleColor + '">' + (ROLE_LABELS[u.role] || u.role) + '</span>';
     html += '<span class="px-2 py-0.5 rounded-full text-xs ' + (u.active !== false ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700') + '">' + (u.active !== false ? 'ใช้งาน' : 'ระงับ') + '</span></div></div>';
-    html += '<div class="flex gap-1">';
-    html += '<button onclick="openEditUserModal(\'' + u.id + '\')" class="w-8 h-8 bg-blue-100 text-blue-700 rounded-xl flex items-center justify-center"><i class="fi fi-rr-edit text-sm"></i></button>';
-    html += '<button onclick="doResetPassword(\'' + u.id + '\')" class="w-8 h-8 bg-amber-100 text-amber-700 rounded-xl flex items-center justify-center"><i class="fi fi-rr-lock text-sm"></i></button>';
+    html += '<div class="flex gap-1">';
+    html += '<button onclick="openEditUserModal(\'' + u.id + '\')" class="w-8 h-8 bg-blue-100 text-blue-700 rounded-xl flex items-center justify-center"><i class="fi fi-rr-edit text-sm"></i></button>';
+    html += '<button onclick="doResetPassword(\'' + u.id + '\')" class="w-8 h-8 bg-amber-100 text-amber-700 rounded-xl flex items-center justify-center"><i class="fi fi-rr-lock text-sm"></i></button>';
     if (u.id !== AUTH.user.id) {
       html += '<button onclick="doDeleteUser(\'' + u.id + '\',\'' + escHtml(u.name || u.username) + '\')" class="w-8 h-8 bg-rose-100 text-rose-700 rounded-xl flex items-center justify-center"><i class="fi fi-rr-trash text-sm"></i></button>';
     }
-    html += '</div></div>';
-  });
+    html += '</div></div>';
+  });
   html += '</div></div>';
   html += '<div id="usersPagination"></div></div>';
   
@@ -3702,16 +3817,16 @@ function doResetPassword(userId) {
 }
 
 function doToggleUser(userId, name) {
-  var user = _usersData.find(function(u) { return u.id === userId; });
-  var action = user && user.active !== false ? 'ระงับ' : 'เปิด';
-  showConfirm(action + 'บัญชีผู้ใช้', action + 'บัญชีของ "' + name + '" ใช่หรือไม่?', function() {
+  var user = _usersData.find(function(u) { return u.id === userId; });
+  var action = user && user.active !== false ? 'ระงับ' : 'เปิด';
+  showConfirm(action + 'บัญชีผู้ใช้', action + 'บัญชีของ "' + name + '" ใช่หรือไม่?', function() {
     showLoading('กำลังดำเนินการ...');
     callAPI('toggleUserActive', AUTH.token, userId).then(function(res) {
       hideLoading();
       if (res.success) { showSuccess(res.message); renderUsers(); }
       else showError(res.message);
-    }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
-  }, action + 'บัญชี');
+    }).catch(function() { hideLoading(); showError('เกิดข้อผิดพลาด'); });
+  }, action + 'บัญชี');
 }
 
 function doDeleteUser(userId, name) {
@@ -3817,9 +3932,16 @@ function openWithdrawBatchModal(itemId, viaQr) {
     body += '<label class="form-label">ค้นหารายการวัสดุ</label>';
     body += '<div class="relative">';
     body += '<i class="fi fi-rr-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>';
-    body += '<input type="text" id="wdDraftSearch" oninput="wdDraftRenderCatalog()" placeholder="พิมพ์ชื่อวัสดุหรือเลขไอเท็ม..." class="form-input pl-9">';
+    body += '<input type="text" id="wdDraftSearch" oninput="wdDraftRenderCatalog()" placeholder="พิมพ์ชื่อ, เลขไอเท็ม, เครื่อง, หมวด, serial..." class="form-input pl-9">';
     body += '</div>';
     body += '</div>';
+    body += '</div>';
+    body += '<div>';
+    body += '<div class="flex items-center justify-between mb-2">';
+    body += '<p class="form-label mb-0">ใช้บ่อยของฉัน</p>';
+    body += '<span class="text-xs text-gray-400">กดดาวในรายการด้านล่างเพื่อบันทึก</span>';
+    body += '</div>';
+    body += '<div id="wdDraftFavorites" class="rounded-xl border border-amber-200 bg-amber-50/60 p-3"></div>';
     body += '</div>';
     body += '<div>';
     body += '<div class="flex items-center justify-between mb-2">';
@@ -3900,7 +4022,25 @@ function wdDraftUpdateQty(itemId, value) {
 
 function wdDraftRenderAll() {
   wdDraftRenderCatalog();
+  wdDraftRenderFavorites();
   wdDraftRenderSelected();
+}
+
+function wdDraftRenderFavorites() {
+  var wrap = document.getElementById('wdDraftFavorites');
+  if (!wrap) return;
+  var data = getFavoriteItems(_wdDraftTypeFilter, _wdDraftMachineFilter, _wdDraftSearch || '').slice(0, 8);
+  if (!data.length) {
+    wrap.innerHTML = '<p class="text-sm text-amber-700 text-center py-2">ยังไม่มีรายการใช้บ่อยที่ตรงเงื่อนไข</p>';
+    return;
+  }
+  wrap.innerHTML = '<div class="flex flex-wrap gap-2">' + data.map(function(item) {
+    var selected = _wdDraftItems.some(function(x) { return x.item_id === item.id; });
+    return '<button type="button" onclick="wdDraftAddItem(\'' + item.id + '\')" class="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-amber-100 ' + (selected ? 'opacity-60 pointer-events-none' : '') + '">'
+      + '<i class="fi fi-sr-star text-amber-500"></i>'
+      + '<span>' + escHtml(item.item_code || '-') + ' • ' + escHtml(item.name || '-') + '</span>'
+      + '</button>';
+  }).join('') + '</div>';
 }
 
 function wdDraftRenderCatalog() {
@@ -3918,10 +4058,7 @@ function wdDraftRenderCatalog() {
     if (_wdDraftTypeFilter !== 'all' && getResolvedItemType(i) !== _wdDraftTypeFilter) return false;
     if (_wdDraftMachineFilter !== 'all' && !itemMatchesMachineFilter(i, _wdDraftMachineFilter)) return false;
     if (!_wdDraftSearch) return true;
-    return (i.name || '').toLowerCase().indexOf(_wdDraftSearch) !== -1
-      || (i.item_code || '').toLowerCase().indexOf(_wdDraftSearch) !== -1
-      || (i.category || '').toLowerCase().indexOf(_wdDraftSearch) !== -1
-      || getMachineUsageText(i).toLowerCase().indexOf(_wdDraftSearch) !== -1;
+    return itemSearchHaystack(i).indexOf(_wdDraftSearch) !== -1;
   });
 
   if (data.length === 0) {
@@ -3937,6 +4074,7 @@ function wdDraftRenderCatalog() {
       + '<p class="text-sm font-medium text-gray-800 truncate">' + escHtml(i.name) + '</p>'
       + '<p class="text-xs text-gray-400">' + escHtml(i.item_code || '-') + ' • คงเหลือ ' + (i.current_stock || 0) + ' ' + escHtml(i.unit || '') + ' • ' + escHtml(getItemTypeLabel(getResolvedItemType(i))) + ' • ' + escHtml(getMachineUsageText(i)) + '</p>'
       + '</div>'
+      + '<button type="button" onclick="toggleFavoriteItem(\'' + i.id + '\', true)" class="w-8 h-8 rounded-full border border-amber-200 bg-white text-amber-500 hover:bg-amber-50 flex items-center justify-center" title="ใช้บ่อย"><i class="fi ' + (i.is_favorite ? 'fi-sr-star' : 'fi-rr-star') + ' text-sm"></i></button>'
       + '<span class="px-2 py-0.5 rounded-full text-xs font-medium ' + stockClass + '">' + getStockLabel(i.current_stock, i.min_stock) + '</span>'
       + '<button type="button" onclick="wdDraftAddItem(\'' + i.id + '\')" class="btn-primary btn-sm text-xs ' + (selected ? 'opacity-60 pointer-events-none' : '') + '">'
       + '<i class="fi fi-rr-plus mr-1"></i>' + (selected ? 'เพิ่มแล้ว' : 'เพิ่ม')

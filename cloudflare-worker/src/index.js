@@ -10,6 +10,8 @@ const LOCAL_COMPAT_FUNCTIONS = new Set([
   'logout',
   'getItems',
   'getItemById',
+  'getFavorites',
+  'toggleFavorite',
   'addItem',
   'updateItem',
   'deleteItem',
@@ -46,6 +48,7 @@ export default {
 };
 
 async function routeRequest(request, env, ctx) {
+  await ensureOptionalSchema(env);
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method.toUpperCase();
@@ -148,6 +151,8 @@ async function dispatchCompat(fn, args, env) {
     case 'logout': return logout(env, args[0]);
     case 'getItems': return getItems(env, args[0], args[1] || {});
     case 'getItemById': return getItemById(env, args[0], args[1]);
+    case 'getFavorites': return getFavorites(env, args[0]);
+    case 'toggleFavorite': return toggleFavorite(env, args[0], args[1]);
     case 'addItem': return addItem(env, args[0], args[1]);
     case 'updateItem': return updateItem(env, args[0], args[1], args[2]);
     case 'deleteItem': return deleteItem(env, args[0], args[1]);
@@ -287,6 +292,36 @@ async function validateSession(env, token) {
   };
 }
 
+async function ensureOptionalSchema(env) {
+  const favoritesTable = await env.DB.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'user_favorites' LIMIT 1"
+  ).first();
+  if (!favoritesTable) {
+    await env.DB.batch([
+      env.DB.prepare(
+        `CREATE TABLE IF NOT EXISTS user_favorites (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          item_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(user_id, item_id),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+        )`
+      ),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_user_favorites_user_id ON user_favorites(user_id)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_user_favorites_item_id ON user_favorites(item_id)')
+    ]);
+  }
+
+  const itemColumns = await env.DB.prepare("PRAGMA table_info('items')").all();
+  const itemColumnNames = new Set((itemColumns.results || []).map((row) => String(row.name || '')));
+  if (!itemColumnNames.has('unit_price')) {
+    await env.DB.prepare('ALTER TABLE items ADD COLUMN unit_price REAL NOT NULL DEFAULT 0').run();
+  }
+}
+
 async function getItems(env, token, filters = {}) {
   const session = await validateSession(env, token);
   if (!session) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
@@ -301,13 +336,14 @@ async function getItems(env, token, filters = {}) {
     binds.push(String(filters.category));
   }
   if (filters.q) {
-    sql += ' AND (item_code LIKE ? OR item_name LIKE ? OR machine_name_legacy LIKE ? OR compatible_machines_text LIKE ?)';
+    sql += ' AND (item_code LIKE ? OR item_name LIKE ? OR machine_name_legacy LIKE ? OR compatible_machines_text LIKE ? OR category_name LIKE ? OR part_no LIKE ? OR spare_part_units LIKE ?)';
     const q = `%${filters.q}%`;
-    binds.push(q, q, q, q);
+    binds.push(q, q, q, q, q, q, q);
   }
   sql += ' ORDER BY item_code ASC';
   const rows = await env.DB.prepare(sql).bind(...binds).all();
-  let data = (rows.results || []).map(mapItemRow);
+  const favoriteIds = await getFavoriteIdSet(env, session.user_id);
+  let data = (rows.results || []).map((row) => mapItemRow(row, session.role === 'admin', favoriteIds.has(row.id)));
   if (filters.stock_status === 'low') {
     data = data.filter((item) => isLowStock(item, defaultThreshold(env)));
   }
@@ -319,7 +355,46 @@ async function getItemById(env, token, itemId) {
   if (!session) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
   const row = await env.DB.prepare('SELECT * FROM items WHERE id = ? LIMIT 1').bind(String(itemId || '')).first();
   if (!row) return { success: false, message: 'ไม่พบรายการวัสดุ' };
-  return { success: true, data: mapItemRow(row) };
+  const favoriteIds = await getFavoriteIdSet(env, session.user_id);
+  return { success: true, data: mapItemRow(row, session.role === 'admin', favoriteIds.has(row.id)) };
+}
+
+async function getFavorites(env, token) {
+  const session = await validateSession(env, token);
+  if (!session) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  const rows = await env.DB.prepare(
+    `SELECT i.*
+     FROM user_favorites uf
+     JOIN items i ON i.id = uf.item_id
+     WHERE uf.user_id = ? AND i.is_active = 1
+     ORDER BY uf.updated_at DESC, i.item_code ASC`
+  ).bind(session.user_id).all();
+  return {
+    success: true,
+    data: (rows.results || []).map((row) => mapItemRow(row, session.role === 'admin', true))
+  };
+}
+
+async function toggleFavorite(env, token, itemId) {
+  const session = await validateSession(env, token);
+  if (!session) return { success: false, message: 'กรุณาเข้าสู่ระบบใหม่' };
+  const item = await env.DB.prepare('SELECT id, item_name FROM items WHERE id = ? AND is_active = 1 LIMIT 1').bind(String(itemId || '')).first();
+  if (!item) return { success: false, message: 'ไม่พบรายการวัสดุ' };
+
+  const existing = await env.DB.prepare(
+    'SELECT id FROM user_favorites WHERE user_id = ? AND item_id = ? LIMIT 1'
+  ).bind(session.user_id, item.id).first();
+
+  if (existing) {
+    await env.DB.prepare('DELETE FROM user_favorites WHERE id = ?').bind(existing.id).run();
+    return { success: true, is_favorite: false, message: `นำ ${item.item_name} ออกจากรายการใช้บ่อยแล้ว` };
+  }
+
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    'INSERT INTO user_favorites (id, user_id, item_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
+  ).bind(crypto.randomUUID(), session.user_id, item.id, now, now).run();
+  return { success: true, is_favorite: true, message: `เพิ่ม ${item.item_name} ไปยังรายการใช้บ่อยแล้ว` };
 }
 
 async function addItem(env, token, itemData) {
@@ -333,8 +408,8 @@ async function addItem(env, token, itemData) {
     `INSERT INTO items (
       id, item_code, item_name, size_label, unit, category_name, item_type, part_no,
       machine_name_legacy, compatible_machines_text, condition_status, serial_tracking,
-      current_stock, min_stock, spare_part_units, description, image_file_id, is_active, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+      current_stock, min_stock, spare_part_units, description, image_file_id, unit_price, is_active, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
   ).bind(
     itemId,
     itemCode,
@@ -353,12 +428,13 @@ async function addItem(env, token, itemData) {
     String(itemData?.spare_part_units || ''),
     String(itemData?.description || ''),
     nullableText(itemData?.image_file_id),
+    moneyVal(itemData?.unit_price, 0),
     now,
     now
   ).run();
   await logAudit(env, session, 'add_item', 'items', `เพิ่มรายการ ${itemData?.name || itemCode}`);
   const row = await env.DB.prepare('SELECT * FROM items WHERE id = ? LIMIT 1').bind(itemId).first();
-  return { success: true, data: mapItemRow(row), message: 'เพิ่มรายการวัสดุเรียบร้อย' };
+  return { success: true, data: mapItemRow(row, true, false), message: 'เพิ่มรายการวัสดุเรียบร้อย' };
 }
 
 async function updateItem(env, token, itemId, itemData) {
@@ -371,7 +447,7 @@ async function updateItem(env, token, itemId, itemData) {
     `UPDATE items SET
       item_code = ?, item_name = ?, size_label = ?, unit = ?, category_name = ?, item_type = ?, part_no = ?,
       machine_name_legacy = ?, compatible_machines_text = ?, condition_status = ?, serial_tracking = ?,
-      current_stock = ?, min_stock = ?, spare_part_units = ?, description = ?, image_file_id = ?, is_active = ?, updated_at = ?
+      current_stock = ?, min_stock = ?, spare_part_units = ?, description = ?, image_file_id = ?, unit_price = ?, is_active = ?, updated_at = ?
      WHERE id = ?`
   ).bind(
     String(itemData?.item_code || existing.item_code || ''),
@@ -390,6 +466,7 @@ async function updateItem(env, token, itemId, itemData) {
     String(itemData?.spare_part_units ?? existing.spare_part_units ?? ''),
     String(itemData?.description ?? existing.description ?? ''),
     hasOwn(itemData, 'image_file_id') ? nullableText(itemData?.image_file_id) : nullableText(existing.image_file_id),
+    moneyVal(typeof itemData?.unit_price === 'undefined' ? existing.unit_price : itemData.unit_price, 0),
     boolInt(typeof itemData?.active === 'undefined' ? existing.is_active : itemData.active),
     new Date().toISOString(),
     existing.id
@@ -795,11 +872,13 @@ async function getDashboardStats(env, token) {
      JOIN items i ON i.id = wri.item_id`
   ).all();
   const transactionResult = await env.DB.prepare('SELECT * FROM transactions').all();
-  const items = (itemsResult.results || []).map(mapItemRow);
+  const itemRows = itemsResult.results || [];
+  const items = itemRows.map((row) => mapItemRow(row, session.role === 'admin', false));
   const withdrawals = withdrawalResult.results || [];
   const withdrawalLines = withdrawalLineResult.results || [];
   const transactions = transactionResult.results || [];
   const today = new Date().toISOString().slice(0, 10);
+  const now = Date.now();
   const threshold = await resolveThreshold(env);
 
   const lowStockItems = items.filter((item) => isLowStock(item, threshold));
@@ -814,6 +893,52 @@ async function getDashboardStats(env, token) {
     topMap.set(key, prev);
   });
   const topItems = [...topMap.values()].sort((a, b) => b.qty - a.qty).slice(0, 5);
+  const totalStockValue = itemRows.reduce((sum, row) => sum + (toNumber(row.current_stock) * moneyVal(row.unit_price, 0)), 0);
+  const lowStockIds = new Set(lowStockItems.map((item) => item.id));
+  const lowStockValue = itemRows.reduce((sum, row) => {
+    if (!lowStockIds.has(row.id)) return sum;
+    return sum + (toNumber(row.current_stock) * moneyVal(row.unit_price, 0));
+  }, 0);
+
+  const pendingHotspotMap = new Map();
+  withdrawalLines.filter((row) => row.status === 'pending').forEach((row) => {
+    const key = row.item_id;
+    const prev = pendingHotspotMap.get(key) || {
+      item_id: key,
+      item_code: row.item_code || '',
+      item_name: row.item_name || '',
+      qty: 0,
+      requests: 0
+    };
+    prev.qty += toNumber(row.quantity_requested);
+    prev.requests += 1;
+    pendingHotspotMap.set(key, prev);
+  });
+  const topPendingItems = [...pendingHotspotMap.values()].sort((a, b) => b.qty - a.qty).slice(0, 5);
+
+  const lastMovementMap = new Map();
+  transactions.forEach((row) => {
+    const current = lastMovementMap.get(row.item_id);
+    const currentTime = current ? new Date(current).getTime() : 0;
+    const nextValue = String(row.tx_date || row.created_at || '');
+    const nextTime = new Date(nextValue).getTime();
+    if (!current || nextTime > currentTime) {
+      lastMovementMap.set(row.item_id, nextValue);
+    }
+  });
+  const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+  const idleItems = items
+    .map((item) => {
+      const lastMovement = lastMovementMap.get(item.id) || item.updated_at || item.created_at || '';
+      const ageMs = lastMovement ? now - new Date(lastMovement).getTime() : ninetyDaysMs + 1;
+      return Object.assign({}, item, {
+        last_movement: lastMovement,
+        idle_days: Math.max(0, Math.floor(ageMs / (24 * 60 * 60 * 1000)))
+      });
+    })
+    .filter((item) => !item.last_movement || item.idle_days >= 90)
+    .sort((a, b) => b.idle_days - a.idle_days)
+    .slice(0, 10);
 
   const typeStats = {
     consumable: { monthly: [], category_stock: {} },
@@ -884,7 +1009,9 @@ async function getDashboardStats(env, token) {
       total_items: items.length,
       low_stock: lowStockItems.length,
       pending: pending.length,
-      today_tx: todayTransactions.length
+      today_tx: todayTransactions.length,
+      total_stock_value: totalStockValue,
+      low_stock_value: lowStockValue
     },
     total_items: items.length,
     low_stock: lowStockItems.length,
@@ -892,9 +1019,17 @@ async function getDashboardStats(env, token) {
     today_txs: todayTransactions.length,
     low_stock_items: lowStockItems.slice(0, 10),
     top_items: topItems,
+    top_pending_items: topPendingItems,
+    idle_items_90d: idleItems,
     recent_transactions: recentTransactions,
     recent_pending: recentPending,
-    type_stats: typeStats
+    type_stats: typeStats,
+    executive: {
+      total_stock_value: totalStockValue,
+      low_stock_value: lowStockValue,
+      top_pending_items: topPendingItems,
+      idle_items_90d: idleItems
+    }
   };
 }
 
@@ -1230,7 +1365,13 @@ function isLowStock(item, threshold) {
   return toNumber(item.current_stock) <= intVal(item.min_stock, threshold);
 }
 
-function mapItemRow(row) {
+async function getFavoriteIdSet(env, userId) {
+  if (!userId) return new Set();
+  const rows = await env.DB.prepare('SELECT item_id FROM user_favorites WHERE user_id = ?').bind(String(userId)).all();
+  return new Set((rows.results || []).map((row) => String(row.item_id || '')));
+}
+
+function mapItemRow(row, includePrice = false, isFavorite = false) {
   return {
     id: row.id,
     item_code: row.item_code,
@@ -1247,9 +1388,13 @@ function mapItemRow(row) {
     current_stock: toNumber(row.current_stock),
     min_stock: toNumber(row.min_stock),
     spare_part_units: row.spare_part_units || '',
+    unit_price: includePrice ? moneyVal(row.unit_price, 0) : undefined,
+    is_favorite: !!isFavorite,
     description: row.description || '',
     image_file_id: row.image_file_id || '',
-    active: !!row.is_active
+    active: !!row.is_active,
+    created_at: row.created_at || '',
+    updated_at: row.updated_at || ''
   };
 }
 
@@ -1416,6 +1561,11 @@ function intVal(value, fallback) {
 function toNumber(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
+}
+
+function moneyVal(value, fallback = 0) {
+  const num = Number.parseFloat(value);
+  return Number.isFinite(num) ? num : fallback;
 }
 
 function defaultTrue(value) {
