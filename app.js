@@ -2887,6 +2887,10 @@ function renderReportLowStock() {
     var consumables = low.filter(function(i) { return getResolvedItemType(i) === 'consumable'; });
     var spareParts = low.filter(function(i) { return getResolvedItemType(i) === 'spare_part'; });
 
+    var html = '<div class="flex justify-end mb-4">';
+    html += '<button onclick="exportLowStockPurchaseExcel()" class="btn-success btn-sm flex items-center gap-1"><i class="fi fi-rr-file-spreadsheet"></i> Export Excel เปิดซื้อ</button>';
+    html += '</div>';
+
     function buildLowStockSection(title, list, tone) {
       var sec = '<section class="card overflow-hidden border ' + tone.border + '">';
       sec += '<div class="px-4 py-3 border-b ' + tone.headBg + ' flex items-center justify-between gap-3">';
@@ -2911,7 +2915,7 @@ function renderReportLowStock() {
       return sec;
     }
 
-    var html = '<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">';
+    html += '<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">';
     html += '<div class="card p-4 border border-red-200 bg-red-50"><div class="text-xs font-semibold text-red-600 uppercase tracking-wide">แจ้งเตือนสต็อกต่ำ</div><div class="mt-1 flex items-end gap-2"><span class="text-3xl font-bold text-red-700">' + low.length + '</span><span class="text-sm text-red-600 pb-1">รายการ</span></div><div class="mt-2 text-xs text-red-600">แยกแสดงวัสดุสิ้นเปลืองและอะไหล่เครื่องจักรในหน้าเดียว</div></div>';
     html += '<div class="card p-4 border border-amber-200 bg-amber-50"><div class="text-xs font-semibold text-amber-700 uppercase tracking-wide">วัสดุสิ้นเปลือง</div><div class="mt-1 flex items-end gap-2"><span class="text-3xl font-bold text-amber-700">' + consumables.length + '</span><span class="text-sm text-amber-700 pb-1">รายการ</span></div></div>';
     html += '<div class="card p-4 border border-blue-200 bg-blue-50"><div class="text-xs font-semibold text-blue-700 uppercase tracking-wide">อะไหล่เครื่องจักร</div><div class="mt-1 flex items-end gap-2"><span class="text-3xl font-bold text-blue-700">' + spareParts.length + '</span><span class="text-sm text-blue-700 pb-1">รายการ</span></div></div>';
@@ -3220,6 +3224,102 @@ function exportLowStock() {
     var rows = items.map(function(i) { return { item_code: i.item_code || '', name: i.name || '', category: i.category || '', current_stock: i.current_stock || 0, min_stock: i.min_stock || 0, unit: i.unit || '' }; });
     downloadXlsx(rows, headers, 'รายงานสต็อกต่ำ');
   }).catch(function() { hideLoading(); showError('Export ไม่สำเร็จ'); });
+}
+
+function exportLowStockPurchaseExcel() {
+  if (!window.XLSX) { showError('ไม่พบ library XLSX'); return; }
+  showLoading('กำลัง Export Excel...');
+  callAPI('getItems', AUTH.token).then(function(res) {
+    hideLoading();
+    if (!res.success) { showError(res.message); return; }
+
+    var lowItems = (res.data || []).filter(isLowStockItem).slice().sort(function(a, b) {
+      var typeA = getResolvedItemType(a);
+      var typeB = getResolvedItemType(b);
+      if (typeA !== typeB) return typeA === 'consumable' ? -1 : 1;
+      return String(a.item_code || '').localeCompare(String(b.item_code || ''));
+    });
+
+    if (!lowItems.length) { showError('ไม่มีรายการสต็อกต่ำสำหรับ Export'); return; }
+
+    var title = 'แบบฟอร์มการขอเปิดซื้ออะไหล่และอุปกรณ์ inventory';
+    var sheetData = [];
+    sheetData.push([title]);
+    sheetData.push([]);
+    sheetData.push(['ลำดับ', 'Item', 'รายการ', 'จำนวน', 'หน่วย', 'ราคาต่อหน่วย', 'ราคาสุทธิ']);
+
+    lowItems.forEach(function(item, index) {
+      var qtyToOrder = Math.max((item.min_stock || 0) - (item.current_stock || 0), 1);
+      sheetData.push([
+        index + 1,
+        item.item_code || '',
+        item.name || '',
+        qtyToOrder,
+        item.unit || '',
+        '',
+        ''
+      ]);
+    });
+
+    var totalRowIndex = sheetData.length + 1;
+    sheetData.push(['', '', '', '', '', 'มูลค่ารวม', '']);
+
+    var ws = XLSX.utils.aoa_to_sheet(sheetData);
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
+      { s: { r: totalRowIndex - 1, c: 0 }, e: { r: totalRowIndex - 1, c: 5 } }
+    ];
+    ws['!cols'] = [
+      { wch: 8 },
+      { wch: 18 },
+      { wch: 58 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 16 },
+      { wch: 16 }
+    ];
+
+    for (var rowIndex = 4; rowIndex <= lowItems.length + 3; rowIndex++) {
+      ws['G' + rowIndex] = { t: 'n', f: 'IF(OR(D' + rowIndex + '="",F' + rowIndex + '=""),"",D' + rowIndex + '*F' + rowIndex + ')' };
+    }
+    ws['G' + totalRowIndex] = { t: 'n', f: 'SUM(G4:G' + (lowItems.length + 3) + ')' };
+
+    var detailHeaders = ['ลำดับ', 'Item', 'รายการ', 'ประเภท', 'หมวด', 'คงเหลือ', 'ขั้นต่ำ', 'จำนวนแนะนำสั่งซื้อ', 'หน่วย'];
+    var detailRows = [detailHeaders];
+    lowItems.forEach(function(item, index) {
+      detailRows.push([
+        index + 1,
+        item.item_code || '',
+        item.name || '',
+        getItemTypeLabel(getResolvedItemType(item)),
+        item.category || '',
+        item.current_stock || 0,
+        item.min_stock || 0,
+        Math.max((item.min_stock || 0) - (item.current_stock || 0), 1),
+        item.unit || ''
+      ]);
+    });
+    var detailWs = XLSX.utils.aoa_to_sheet(detailRows);
+    detailWs['!cols'] = [
+      { wch: 8 },
+      { wch: 18 },
+      { wch: 58 },
+      { wch: 18 },
+      { wch: 28 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 18 },
+      { wch: 10 }
+    ];
+
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'เปิดซื้อ');
+    XLSX.utils.book_append_sheet(wb, detailWs, 'ข้อมูลสต็อกต่ำ');
+    XLSX.writeFile(wb, 'แบบฟอร์มเปิดซื้อ_สต็อกต่ำ.xlsx');
+  }).catch(function() {
+    hideLoading();
+    showError('Export ไม่สำเร็จ');
+  });
 }
 
 // ===== PROFILE =====
