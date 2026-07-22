@@ -4011,8 +4011,19 @@ function wdDraftRemoveItem(itemId) {
 }
 
 function wdDraftUpdateQty(itemId, value) {
+  // Do not re-render while the user is typing. Replacing the input here used
+  // to reset its focus/value after every digit, making multi-digit editing impossible.
+  var qty = value === '' ? '' : parseInt(value, 10);
+  if (value !== '' && (!Number.isFinite(qty) || qty < 0)) qty = 0;
+  _wdDraftItems = _wdDraftItems.map(function(x) {
+    if (x.item_id !== itemId) return x;
+    return Object.assign({}, x, { quantity: qty });
+  });
+}
+
+function wdDraftFinalizeQty(itemId, value) {
   var qty = parseInt(value, 10);
-  if (!qty || qty < 1) qty = 1;
+  if (!Number.isFinite(qty) || qty < 1) qty = 1;
   _wdDraftItems = _wdDraftItems.map(function(x) {
     if (x.item_id !== itemId) return x;
     return Object.assign({}, x, { quantity: qty });
@@ -4108,7 +4119,7 @@ function wdDraftRenderSelected() {
       + '<div class="mt-3 grid grid-cols-[1fr_110px] gap-3 items-end">'
       + '<div class="min-w-0">'
       + '<label class="form-label">จำนวนที่ต้องการเบิก</label>'
-      + '<input type="number" min="1" value="' + x.quantity + '" oninput="wdDraftUpdateQty(\'' + x.item_id + '\', this.value)" class="form-input ' + (overStock ? 'border-red-300 focus:ring-red-500' : '') + '">'
+      + '<input type="number" min="1" step="1" inputmode="numeric" value="' + x.quantity + '" oninput="wdDraftUpdateQty(\'' + x.item_id + '\', this.value)" onblur="wdDraftFinalizeQty(\'' + x.item_id + '\', this.value)" class="form-input ' + (overStock ? 'border-red-300 focus:ring-red-500' : '') + '">'
       + '</div>'
       + '<div class="text-right text-xs ' + (overStock ? 'text-red-600' : 'text-gray-400') + '">' + (overStock ? 'เกินสต็อก' : 'พร้อมเบิก') + '</div>'
       + '</div>'
