@@ -3916,7 +3916,7 @@ function openWithdrawBatchModal(itemId, viaQr) {
         _wdDraftTypeFilter = getResolvedItemType(seededItem);
         if (seededItem.machine_name) _wdDraftMachineFilter = seededItem.machine_name;
       }
-      _wdDraftAddItem(itemId);
+      wdDraftAddItem(itemId);
     }
     var reasonOptions = ''
       + '<option value="use_general">ใช้ทั่วไป</option>'
